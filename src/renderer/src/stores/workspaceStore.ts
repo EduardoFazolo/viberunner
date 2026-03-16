@@ -9,9 +9,16 @@ export interface Workspace {
   color: string | null
 }
 
+export interface NodeSummary {
+  id: string
+  title: string
+  type: string
+}
+
 interface WorkspaceState {
   workspaces: Workspace[]
   activeId: string | null
+  nodeSummaries: Record<string, NodeSummary[]>
 
   // Actions
   setWorkspaces: (ws: Workspace[]) => void
@@ -20,11 +27,13 @@ interface WorkspaceState {
   removeWorkspace: (id: string) => void
   renameWorkspace: (id: string, name: string) => void
   touchWorkspace: (id: string) => void
+  setNodeSummaries: (workspaceId: string, nodes: NodeSummary[]) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspaces: [],
   activeId: null,
+  nodeSummaries: {},
 
   setWorkspaces: (ws) => set({ workspaces: ws }),
 
@@ -60,6 +69,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       workspaces: s.workspaces.map((w) =>
         w.id === id ? { ...w, lastOpenedAt: Date.now() } : w
       ),
+    })),
+
+  setNodeSummaries: (workspaceId, nodes) =>
+    set((s) => ({
+      nodeSummaries: { ...s.nodeSummaries, [workspaceId]: nodes },
     })),
 }))
 

@@ -73,7 +73,22 @@ export function useWorkspaceInit(): void {
 
       useWorkspaceStore.setState({ workspaces: dbWorkspaces, activeId })
 
-      // Load canvas for the active workspace
+      // Load node summaries for all workspaces (for sidebar display)
+      const summariesEntries = await Promise.all(
+        dbWorkspaces.map(async (ws: Workspace) => {
+          try {
+            const rows = await window.canvas.getNodes(ws.id)
+            return [ws.id, rows.map((r: any) => ({ id: r.id, title: r.title, type: r.type }))] as const
+          } catch {
+            return [ws.id, []] as const
+          }
+        })
+      )
+      const nodeSummaries: Record<string, any[]> = {}
+      for (const [id, summaries] of summariesEntries) nodeSummaries[id] = summaries
+      useWorkspaceStore.setState({ nodeSummaries })
+
+      // Load full canvas for the active workspace
       if (activeId) {
         await loadWorkspaceCanvas(activeId)
       }
@@ -100,6 +115,12 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
       nodes.set(node.id, node)
     }
     useNodeStore.setState({ nodes })
+
+    // Update sidebar summaries for this workspace
+    useWorkspaceStore.getState().setNodeSummaries(
+      workspaceId,
+      nodeRows.map((r: any) => ({ id: r.id, title: r.title, type: r.type }))
+    )
 
     // Hydrate camera
     if (cameraRow) {
