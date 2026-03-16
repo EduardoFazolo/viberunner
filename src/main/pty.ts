@@ -11,14 +11,8 @@ interface IPty {
 }
 
 const ptys = new Map<string, IPty>()
-let isQuitting = false
-
-export function setQuitting(): void {
-  isQuitting = true
-}
 
 export function setupPtyHandlers(getWebContents: () => WebContents | null): void {
-  // terminal:create(id, workspaceId, cwd, shell)
   ipcMain.handle('terminal:create', async (_event, id: string, workspaceId: string, cwd: string, shell: string) => {
     if (ptys.has(id)) return
 
@@ -26,34 +20,19 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
     const defaultShell = shell || process.env.SHELL || '/bin/zsh'
     const defaultCwd = cwd || os.homedir()
 
-    let ptyProcess: IPty
-
-    if (tmuxManager.isAvailable() && workspaceId) {
-      const session = tmuxManager.sessionName(workspaceId, id)
-      const exists = await tmuxManager.sessionExists(session)
-
-      if (!exists) {
-        await tmuxManager.createSession(session, defaultCwd, defaultShell)
-      }
-
-      // Attach node-pty to the tmux session
-      ptyProcess = pty.spawn(tmuxManager.getBin(), ['attach-session', '-t', session], {
-        name: 'xterm-256color',
-        cols: 80,
-        rows: 24,
-        cwd: defaultCwd,
-        env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
-      })
-    } else {
-      // No tmux — direct shell (no persistence)
-      ptyProcess = pty.spawn(defaultShell, [], {
-        name: 'xterm-256color',
-        cols: 80,
-        rows: 24,
-        cwd: defaultCwd,
-        env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
-      })
-    }
+    // Always run the shell directly — xterm.js owns scrollback natively.
+    // tmux is used only to keep the background session alive for cwd/process persistence.
+    // Starting/restoring is handled at the tmux session level, not by attaching here.
+    // Strip TERM_SESSION_ID so zsh doesn't share/corrupt macOS shell session files
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { TERM_SESSION_ID: _sid, ...baseEnv } = process.env
+    const ptyProcess = pty.spawn(defaultShell, [], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd: defaultCwd,
+      env: { ...baseEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+    })
 
     ptyProcess.onData((data: string) => {
       try {
@@ -67,6 +46,16 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
     })
 
     ptys.set(id, ptyProcess)
+
+    // Ensure a background tmux session exists for this terminal (for future process persistence).
+    // We don't attach to it — it just keeps running in the background.
+    if (tmuxManager.isAvailable() && workspaceId) {
+      const session = tmuxManager.sessionName(workspaceId, id)
+      const exists = await tmuxManager.sessionExists(session)
+      if (!exists) {
+        await tmuxManager.createSession(session, defaultCwd, defaultShell).catch(() => {})
+      }
+    }
   })
 
   ipcMain.on('terminal:write', (_event, id: string, data: string) => {
@@ -77,9 +66,6 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
     ptys.get(id)?.resize(cols, rows)
   })
 
-  // terminal:kill(id, workspaceId, deleteSession)
-  // deleteSession=true → also kill the tmux session (node was explicitly closed)
-  // deleteSession=false → leave tmux alive (app quit / workspace switch)
   ipcMain.handle('terminal:kill', async (_event, id: string, workspaceId: string, deleteSession: boolean) => {
     const proc = ptys.get(id)
     if (proc) {
@@ -95,18 +81,14 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
 }
 
 export function killAllPtys(): void {
-  setQuitting()
   for (const proc of ptys.values()) {
     try { proc.kill() } catch {}
   }
   ptys.clear()
-  // tmux sessions stay alive intentionally — they'll be reattached on next launch
 }
 
-/** Remove tmux sessions that have no matching node in the database */
 export async function cleanupOrphanSessions(validNodeIds: string[]): Promise<void> {
   if (!tmuxManager.isAvailable()) return
-
   const sessions = await tmuxManager.listManagedSessions()
   for (const session of sessions) {
     const hasNode = validNodeIds.some((id) => session.includes(id))

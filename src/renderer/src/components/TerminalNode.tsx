@@ -7,6 +7,7 @@ import { NodeData } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useNodeStore } from '../stores/nodeStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
+import { registerTerminal, unregisterTerminal } from '../terminalRegistry'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -19,6 +20,7 @@ interface Props {
 
 export function TerminalNode({ node }: Props): React.ReactElement {
   const termRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const serializeAddonRef = useRef<SerializeAddon | null>(null)
@@ -88,6 +90,9 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     fitAddonRef.current = fitAddon
     serializeAddonRef.current = serializeAddon
 
+    // Register so beforeunload can serialize this terminal synchronously
+    registerTerminal(node.id, () => serializeAddonRef.current?.serialize() ?? '')
+
     // Restore previous scrollback from SQLite (written before tmux output starts)
     const savedState = node.props.serializedState as string | undefined
     if (savedState) {
@@ -105,19 +110,24 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     // xterm → PTY
     term.onData((data) => window.terminal.write(node.id, data))
 
-    // Autosave serialized scrollback every 60 seconds
+    // Periodically update nodeStore with serialized state so autosave keeps SQLite fresh
     saveTimerRef.current = setInterval(() => {
       if (serializeAddonRef.current) {
-        const state = serializeAddonRef.current.serialize()
-        window.terminal.saveState(node.id, state)
+        const serializedState = serializeAddonRef.current.serialize()
+        const current = useNodeStore.getState().nodes.get(node.id)
+        if (current) {
+          useNodeStore.getState().update(node.id, { props: { ...current.props, serializedState } })
+        }
       }
-    }, 60_000)
+    }, 5_000)
 
     return () => {
-      // Serialize and save scrollback before teardown
+      unregisterTerminal(node.id)
+
+      // Workspace switch: node is already removed from store, write directly to DB
       if (serializeAddonRef.current) {
-        const state = serializeAddonRef.current.serialize()
-        window.terminal.saveState(node.id, state)
+        const serializedState = serializeAddonRef.current.serialize()
+        window.terminal.saveState(node.id, serializedState)
       }
 
       if (saveTimerRef.current) clearInterval(saveTimerRef.current)
@@ -135,6 +145,18 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     }
   }, [node.id])
 
+  // Block canvas wheel events when cursor is inside the terminal.
+  // Hold Cmd (metaKey) to pan/zoom the canvas instead.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.metaKey) e.stopPropagation()
+    }
+    el.addEventListener('wheel', onWheel, { passive: true })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
   // Refit when node size changes
   useEffect(() => {
     if (!fitAddonRef.current || !xtermRef.current) return
@@ -151,6 +173,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       <ContextMenuTrigger>
         <BaseNode node={node}>
           <div
+            ref={containerRef}
             style={{ width: '100%', height: node.height - 32, padding: '6px 8px', boxSizing: 'border-box' }}
             onPointerDown={(e) => e.stopPropagation()}
           >

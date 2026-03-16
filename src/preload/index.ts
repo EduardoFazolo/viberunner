@@ -50,6 +50,10 @@ contextBridge.exposeInMainWorld('canvas', {
   saveNodes: (workspaceId: string, nodes: NodeRow[]): Promise<void> =>
     ipcRenderer.invoke('canvas:saveNodes', workspaceId, nodes),
 
+  // Synchronous variant for beforeunload — blocks until SQLite write completes
+  saveNodesSync: (workspaceId: string, nodes: NodeRow[]): void =>
+    ipcRenderer.sendSync('canvas:saveNodesSync', workspaceId, nodes),
+
   deleteNode: (id: string): Promise<void> =>
     ipcRenderer.invoke('canvas:deleteNode', id),
 

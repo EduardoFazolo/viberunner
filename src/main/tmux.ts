@@ -63,6 +63,22 @@ export class TmuxManager {
   async createSession(name: string, cwd: string, shell: string): Promise<void> {
     const sh = shell || process.env.SHELL || '/bin/zsh'
     await this.run('new-session', '-d', '-s', name, '-c', cwd, sh)
+    await this.configureSession(name)
+  }
+
+  async configureSession(name: string): Promise<void> {
+    try {
+      await this.run('set-option', '-t', name, 'status', 'off')
+      // mouse on: tmux intercepts scroll events and enters copy-mode for scrollback.
+      // Without this, tmux runs in the alternate screen (no xterm.js scrollback buffer)
+      // and scroll events get translated to cursor-up/down arrow keypresses.
+      await this.run('set-option', '-t', name, 'mouse', 'on')
+    } catch {}
+  }
+
+  /** @deprecated use configureSession */
+  async hideStatusBar(name: string): Promise<void> {
+    return this.configureSession(name)
   }
 
   async killSession(name: string): Promise<void> {

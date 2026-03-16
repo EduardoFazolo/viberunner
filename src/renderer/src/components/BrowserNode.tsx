@@ -52,6 +52,7 @@ interface Props {
 export function BrowserNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack, add } = useNodeStore()
   const webviewRef = useRef<any>(null)
+  const webviewAreaRef = useRef<HTMLDivElement>(null)
 
   const [urlBar, setUrlBar] = useState<string>(
     (node.props.url as string) || 'https://google.com'
@@ -159,6 +160,14 @@ export function BrowserNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('new-window', onNewWindow)
     }
   }, [node.id, node.x, node.y, update, add])
+
+  useEffect(() => {
+    const el = webviewAreaRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => { if (!e.metaKey) e.stopPropagation() }
+    el.addEventListener('wheel', onWheel, { passive: true })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   const handleBack = useCallback(() => {
     if (webviewRef.current) {
@@ -340,6 +349,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
 
           {/* Webview area — webview stays mounted always to preserve page state */}
           <div
+            ref={webviewAreaRef}
             style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: '#ffffff' }}
             onPointerDown={(e) => e.stopPropagation()}
           >

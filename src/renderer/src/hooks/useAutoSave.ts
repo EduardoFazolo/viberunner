@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNodeStore, NodeData } from '../stores/nodeStore'
 import { useCameraStore, Camera } from '../stores/cameraStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
+import { serializeAllTerminals } from '../terminalRegistry'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,14 +71,27 @@ export function useAutoSave(): void {
       }, CAMERA_DEBOUNCE_MS)
     })
 
-    // Force-save on page unload (before-quit fires before renderer is destroyed)
+    // Force-save on page unload — synchronous so it completes before the window closes
     const onBeforeUnload = () => {
       const workspaceId = useWorkspaceStore.getState().activeId
       if (!workspaceId) return
+
+      // Serialize all live terminals and inject into the store before saving
+      const terminalStates = serializeAllTerminals()
+      for (const [nodeId, serializedState] of terminalStates) {
+        const current = useNodeStore.getState().nodes.get(nodeId)
+        if (current) {
+          useNodeStore.getState().update(nodeId, { props: { ...current.props, serializedState } })
+        }
+      }
+
+      // Synchronous save — blocks until SQLite write completes (renderer stays alive)
       const nodes = useNodeStore.getState().nodes
-      const camera = useCameraStore.getState().camera
-      // Synchronous IPC not available in contextIsolation; best-effort async
-      persistCanvas(workspaceId, nodes, camera)
+      const rows = Array.from(nodes.values()).map((n) => nodeToRow(n, workspaceId))
+      window.canvas.saveNodesSync(workspaceId, rows)
+
+      // Camera can remain async (non-critical)
+      window.canvas.saveCamera({ workspaceId, ...useCameraStore.getState().camera })
     }
 
     window.addEventListener('beforeunload', onBeforeUnload)

@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, IpcMainEvent, dialog, BrowserWindow } from 'electron'
 import { homedir } from 'os'
 import {
   getWorkspaces, saveWorkspace, deleteWorkspace,
@@ -41,6 +41,12 @@ export function setupWorkspaceHandlers(): void {
   ipcMain.handle('canvas:saveNodes', (_e, workspaceId: string, nodes: NodeRow[]) =>
     saveNodes(workspaceId, nodes)
   )
+
+  // Synchronous variant used in beforeunload to guarantee the write completes before window closes
+  ipcMain.on('canvas:saveNodesSync', (event: IpcMainEvent, workspaceId: string, nodes: NodeRow[]) => {
+    try { saveNodes(workspaceId, nodes) } catch {}
+    event.returnValue = null
+  })
 
   ipcMain.handle('canvas:deleteNode', (_e, id: string) => deleteNode(id))
 

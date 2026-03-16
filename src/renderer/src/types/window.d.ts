@@ -53,6 +53,7 @@ declare global {
     canvas: {
       getNodes: (workspaceId: string) => Promise<NodeRow[]>
       saveNodes: (workspaceId: string, nodes: NodeRow[]) => Promise<void>
+      saveNodesSync: (workspaceId: string, nodes: NodeRow[]) => void
       deleteNode: (id: string) => Promise<void>
       getCamera: (workspaceId: string) => Promise<CameraRow | null>
       saveCamera: (cam: CameraRow) => Promise<void>
