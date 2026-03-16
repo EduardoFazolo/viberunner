@@ -405,41 +405,10 @@ export function Sidebar(): React.ReactElement {
         flexShrink: 0,
         overflow: 'hidden',
       }}>
-        {/* App header */}
-        <div style={{
-          height: 48,
-          display: 'flex', alignItems: 'center',
-          padding: '0 14px',
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
-          flexShrink: 0,
-        }}>
-          {/* Logo mark */}
-          <div style={{
-            width: 22, height: 22,
-            background: 'linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%)',
-            borderRadius: 6, marginRight: 9, flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-              <rect x="1" y="1" width="4" height="4" rx="1" fill="white" opacity="0.9"/>
-              <rect x="6" y="1" width="4" height="4" rx="1" fill="white" opacity="0.6"/>
-              <rect x="1" y="6" width="4" height="4" rx="1" fill="white" opacity="0.6"/>
-              <rect x="6" y="6" width="4" height="4" rx="1" fill="white" opacity="0.3"/>
-            </svg>
-          </div>
-          <span style={{
-            fontSize: 13, fontWeight: 600,
-            color: 'rgba(255,255,255,0.75)',
-            letterSpacing: '0.01em',
-          }}>
-            CanvaFlow
-          </span>
-        </div>
-
         {/* Section label + add button */}
         <div style={{
           display: 'flex', alignItems: 'center',
-          padding: '14px 12px 6px 12px',
+          padding: '8px 12px 6px 12px',
           flexShrink: 0,
         }}>
           <span style={{
