@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useCameraStore } from '../stores/cameraStore'
+import { useSettingsStore } from '../stores/settingsStore'
+import { useNodeStore } from '../stores/nodeStore'
 import { GridRenderer } from './GridRenderer'
 import { CanvasOverlay } from './CanvasOverlay'
 import { NodeLayer } from './NodeLayer'
@@ -8,7 +10,7 @@ import { CanvasContextMenu } from './CanvasContextMenu'
 export function Canvas(): React.ReactElement {
   const { camera, pan, zoomAt } = useCameraStore()
   const rootRef = useRef<HTMLDivElement>(null)
-  const isPanning = useRef(false)
+  const isPanningRef = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
   const spaceHeldRef = useRef(false)
   const [spaceHeld, setSpaceHeld] = useState(false)
@@ -19,33 +21,46 @@ export function Canvas(): React.ReactElement {
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      if (e.ctrlKey || e.metaKey) {
+      const style = useSettingsStore.getState().settings.navStyle
+      if (style === 'trackpad') {
         zoomAt(e.clientX, e.clientY, e.deltaY)
       } else {
-        pan(-e.deltaX, -e.deltaY)
+        if (e.ctrlKey || e.metaKey) {
+          zoomAt(e.clientX, e.clientY, e.deltaY)
+        } else {
+          pan(-e.deltaX, -e.deltaY)
+        }
       }
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
   }, [pan, zoomAt])
 
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    const isCanvasRoot = e.target === e.currentTarget
-    if (e.button === 1 || (e.button === 0 && (spaceHeldRef.current || isCanvasRoot))) {
-      isPanning.current = true
-      lastPos.current = { x: e.clientX, y: e.clientY }
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-      e.preventDefault()
-    }
+  const startPan = useCallback((e: React.PointerEvent) => {
+    isPanningRef.current = true
+    lastPos.current = { x: e.clientX, y: e.clientY }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    e.preventDefault()
   }, [])
 
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    // Clicking the canvas background deactivates any focused node.
+    // Nodes call stopPropagation on pointerDown, so this only fires on empty space.
+    useNodeStore.getState().setFocusedNodeId(null)
+    if (e.button === 1 || e.button === 0) {
+      startPan(e)
+    }
+  }, [startPan])
+
   const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isPanning.current) return
+    if (!isPanningRef.current) return
     pan(e.clientX - lastPos.current.x, e.clientY - lastPos.current.y)
     lastPos.current = { x: e.clientX, y: e.clientY }
   }, [pan])
 
-  const onPointerUp = useCallback(() => { isPanning.current = false }, [])
+  const onPointerUp = useCallback(() => {
+    isPanningRef.current = false
+  }, [])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.code === 'Space') { spaceHeldRef.current = true; setSpaceHeld(true) }
@@ -78,6 +93,7 @@ export function Canvas(): React.ReactElement {
         <CanvasOverlay camera={camera}>
           <NodeLayer />
         </CanvasOverlay>
+
       </div>
     </CanvasContextMenu>
   )

@@ -8,6 +8,7 @@ import { BaseNode } from './BaseNode'
 import { useNodeStore } from '../stores/nodeStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { registerTerminal, unregisterTerminal } from '../terminalRegistry'
+import { useSettingsStore } from '../stores/settingsStore'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -25,16 +26,20 @@ export function TerminalNode({ node }: Props): React.ReactElement {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const serializeAddonRef = useRef<SerializeAddon | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const { update, remove, bringToFront, sendToBack } = useNodeStore()
+  const { update, remove, bringToFront, sendToBack, focusedNodeId, setFocusedNodeId } = useNodeStore()
+  const focusedNodeIdRef = useRef(focusedNodeId)
+  useEffect(() => { focusedNodeIdRef.current = focusedNodeId }, [focusedNodeId])
 
   useEffect(() => {
     if (!termRef.current) return
 
     const workspaceId = useWorkspaceStore.getState().activeId || ''
 
+    const { settings: appSettings } = useSettingsStore.getState()
+
     const term = new Terminal({
       fontFamily: 'JetBrains Mono, Menlo, Consolas, monospace',
-      fontSize: 13,
+      fontSize: appSettings.fontSize,
       lineHeight: 1.2,
       cursorBlink: true,
       allowTransparency: false,
@@ -101,7 +106,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
 
     // Start PTY (via tmux if available)
     const cwd = (node.props.cwd as string) || ''
-    const shell = (node.props.shell as string) || ''
+    const shell = (node.props.shell as string) || appSettings.shell
     window.terminal.create(node.id, workspaceId, cwd, shell)
 
     // PTY → xterm
@@ -145,17 +150,18 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     }
   }, [node.id])
 
-  // Block canvas wheel events when cursor is inside the terminal.
-  // Hold Cmd (metaKey) to pan/zoom the canvas instead.
+
+  // Block wheel events from reaching the canvas only when this terminal is focused.
+  // When not focused, the guard overlay intercepts events so this handler never sees them.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
-      if (!e.metaKey) e.stopPropagation()
+      if (focusedNodeIdRef.current === node.id) e.stopPropagation()
     }
     el.addEventListener('wheel', onWheel, { passive: true })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [node.id])
 
   // Refit when node size changes
   useEffect(() => {
@@ -174,10 +180,17 @@ export function TerminalNode({ node }: Props): React.ReactElement {
         <BaseNode node={node}>
           <div
             ref={containerRef}
-            style={{ width: '100%', height: node.height - 32, padding: '6px 8px', boxSizing: 'border-box' }}
+            style={{ width: '100%', height: node.height - 32, padding: '6px 8px', boxSizing: 'border-box', position: 'relative' }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            <div ref={termRef} style={{ width: '100%', height: '100%' }} />
+            {/* isolation: isolate contains xterm's internal z-indices so our overlay can sit above them */}
+            <div ref={termRef} style={{ width: '100%', height: '100%', isolation: 'isolate' }} />
+            {focusedNodeId !== node.id && (
+              <div
+                style={{ position: 'absolute', inset: 0, zIndex: 9999, cursor: 'text' }}
+                onPointerDown={(e) => { e.stopPropagation(); setFocusedNodeId(node.id) }}
+              />
+            )}
           </div>
         </BaseNode>
       </ContextMenuTrigger>

@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid'
 import { useWorkspaceStore, Workspace } from '../stores/workspaceStore'
 import { useNodeStore, NodeData, NodeType } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
+import { useSettingsStore } from '../stores/settingsStore'
 
 // ---------------------------------------------------------------------------
 // Convert DB row → NodeData
@@ -35,6 +36,9 @@ export function useWorkspaceInit(): void {
 
     async function init() {
       const api = window
+
+      // Load settings early so terminals can read them on first spawn
+      useSettingsStore.getState().load()
 
       // Load all workspaces from DB
       let dbWorkspaces: Workspace[] = []

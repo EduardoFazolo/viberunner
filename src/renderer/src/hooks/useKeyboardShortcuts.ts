@@ -5,9 +5,10 @@ import { fitAllNodes } from '../utils/canvasUtils'
 
 interface Options {
   onSearch: () => void
+  onSettings: () => void
 }
 
-export function useKeyboardShortcuts({ onSearch }: Options): void {
+export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
   useEffect(() => {
     const unsub = window.app.onShortcut((name) => {
       switch (name) {
@@ -41,8 +42,11 @@ export function useKeyboardShortcuts({ onSearch }: Options): void {
         case 'search':
           onSearch()
           break
+        case 'settings':
+          onSettings()
+          break
       }
     })
     return unsub
-  }, [onSearch])
+  }, [onSearch, onSettings])
 }

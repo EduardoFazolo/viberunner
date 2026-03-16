@@ -38,6 +38,7 @@ function createWindow(): void {
     else if (mod && input.key === 'f') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'search') }
     else if (mod && (input.key === '=' || input.key === '+')) { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomIn') }
     else if (mod && input.key === '-') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomOut') }
+    else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
   })
 
   // Kill all PTYs before the webContents is destroyed so onData never fires into a dead window

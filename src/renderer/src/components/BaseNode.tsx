@@ -33,7 +33,8 @@ interface Props {
 }
 
 export function BaseNode({ node, children, onContextMenu }: Props): React.ReactElement {
-  const { update, bringToFront, remove } = useNodeStore()
+  const { update, bringToFront, remove, focusedNodeId, setFocusedNodeId } = useNodeStore()
+  const focused = focusedNodeId === node.id
   const cameraRef = useRef(useCameraStore.getState().camera)
 
   // Keep camera ref current without re-rendering
@@ -101,10 +102,13 @@ export function BaseNode({ node, children, onContextMenu }: Props): React.ReactE
         width: node.width,
         zIndex: node.zIndex,
         borderRadius: 8,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35)',
+        boxShadow: focused
+          ? '0 8px 32px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.4), 0 0 0 1.5px rgba(167,139,250,0.5)'
+          : '0 8px 32px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35)',
         overflow: node.minimized ? 'visible' : 'hidden',
+        transition: 'box-shadow 0.15s',
       }}
-      onPointerDown={() => bringToFront(node.id)}
+      onPointerDown={() => { bringToFront(node.id); setFocusedNodeId(node.id) }}
       onContextMenu={onContextMenu}
     >
       {/* Title bar */}
@@ -116,10 +120,13 @@ export function BaseNode({ node, children, onContextMenu }: Props): React.ReactE
           paddingLeft: 12,
           paddingRight: 8,
           gap: 4,
-          background: '#161616',
+          background: focused ? '#1c1c1c' : '#161616',
           borderRadius: node.minimized ? 8 : '8px 8px 0 0',
-          border: '1px solid rgba(255,255,255,0.07)',
-          borderBottom: node.minimized ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(255,255,255,0.05)',
+          border: focused ? '1px solid rgba(167,139,250,0.25)' : '1px solid rgba(255,255,255,0.07)',
+          borderBottom: node.minimized
+            ? (focused ? '1px solid rgba(167,139,250,0.25)' : '1px solid rgba(255,255,255,0.07)')
+            : '1px solid rgba(255,255,255,0.05)',
+          transition: 'background 0.15s, border-color 0.15s',
           cursor: 'grab',
           userSelect: 'none',
         }}
@@ -128,7 +135,7 @@ export function BaseNode({ node, children, onContextMenu }: Props): React.ReactE
         onPointerUp={onHeaderPointerUp}
       >
         {/* Drag dots */}
-        <svg width="8" height="12" viewBox="0 0 8 12" style={{ opacity: 0.2, flexShrink: 0, marginRight: 6 }}>
+        <svg width="8" height="12" viewBox="0 0 8 12" style={{ opacity: focused ? 0.35 : 0.15, flexShrink: 0, marginRight: 6, transition: 'opacity 0.15s' }}>
           <circle cx="2" cy="2" r="1.2" fill="white" />
           <circle cx="6" cy="2" r="1.2" fill="white" />
           <circle cx="2" cy="6" r="1.2" fill="white" />
@@ -141,7 +148,8 @@ export function BaseNode({ node, children, onContextMenu }: Props): React.ReactE
           flex: 1,
           fontSize: 11,
           fontWeight: 500,
-          color: 'rgba(255,255,255,0.38)',
+          color: focused ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.3)',
+          transition: 'color 0.15s',
           letterSpacing: '0.03em',
           overflow: 'hidden',
           textOverflow: 'ellipsis',

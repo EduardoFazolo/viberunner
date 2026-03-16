@@ -360,7 +360,7 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace }: {
 // Sidebar
 // ---------------------------------------------------------------------------
 
-export function Sidebar(): React.ReactElement {
+export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): React.ReactElement {
   const { workspaces, activeId, setActive, removeWorkspace, touchWorkspace, nodeSummaries, setNodeSummaries } =
     useWorkspaceStore()
   const [showAdd, setShowAdd] = useState(false)
@@ -424,7 +424,7 @@ export function Sidebar(): React.ReactElement {
         {/* Workspace list */}
         <div style={{
           flex: 1, overflowY: 'auto', overflowX: 'hidden',
-          padding: '2px 0 12px 0',
+          padding: '2px 0 4px 0',
         }}>
           {workspaces.map((ws) => (
             <WorkspaceSection
@@ -446,6 +446,15 @@ export function Sidebar(): React.ReactElement {
             </div>
           )}
         </div>
+
+        {/* Bottom toolbar */}
+        <div style={{
+          flexShrink: 0, padding: '6px 8px',
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex', justifyContent: 'flex-end',
+        }}>
+          <GearButton onClick={() => onOpenSettings?.()} />
+        </div>
       </div>
 
       {showAdd && <AddWorkspaceDialog onClose={() => setShowAdd(false)} />}
@@ -457,6 +466,31 @@ export function Sidebar(): React.ReactElement {
         />
       )}
     </>
+  )
+}
+
+function GearButton({ onClick }: { onClick: () => void }): React.ReactElement {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      title="Settings (⌘,)"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        width: 22, height: 22, borderRadius: 5, border: 'none',
+        background: hovered ? 'rgba(255,255,255,0.08)' : 'transparent',
+        color: hovered ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.28)',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 0, flexShrink: 0, transition: 'background 0.1s, color 0.1s',
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+        <circle cx="6.5" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.2"/>
+        <path d="M6.5 1v1.2M6.5 10.8V12M12 6.5h-1.2M2.2 6.5H1M10.3 2.7l-.85.85M3.55 9.45l-.85.85M10.3 10.3l-.85-.85M3.55 3.55l-.85-.85"
+          stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      </svg>
+    </button>
   )
 }
 

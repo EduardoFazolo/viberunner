@@ -18,6 +18,8 @@ export interface NodeData {
 
 interface NodeStore {
   nodes: Map<string, NodeData>
+  focusedNodeId: string | null
+  setFocusedNodeId: (id: string | null) => void
   add: (type: NodeType, x: number, y: number, props?: Record<string, unknown>) => NodeData
   remove: (id: string) => void
   update: (id: string, patch: Partial<NodeData>) => void
@@ -40,6 +42,8 @@ const DEFAULT_TITLES: Record<NodeType, string> = {
 
 export const useNodeStore = create<NodeStore>((set, get) => ({
   nodes: new Map(),
+  focusedNodeId: null,
+  setFocusedNodeId: (id) => set({ focusedNodeId: id }),
 
   add: (type, x, y, props = {}) => {
     const id = nanoid()

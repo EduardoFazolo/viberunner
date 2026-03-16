@@ -3,6 +3,7 @@ import { Canvas } from './components/Canvas'
 import { Sidebar, SIDEBAR_W } from './components/Sidebar'
 import { TitleBar } from './components/TitleBar'
 import { CommandPalette } from './components/CommandPalette'
+import { SettingsPanel } from './components/SettingsPanel'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -13,10 +14,12 @@ export default function App(): React.ReactElement {
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const openPalette = useCallback(() => setPaletteOpen(true), [])
+  const openSettings = useCallback(() => setSettingsOpen(true), [])
 
-  useKeyboardShortcuts({ onSearch: openPalette })
+  useKeyboardShortcuts({ onSearch: openPalette, onSettings: openSettings })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -32,13 +35,14 @@ export default function App(): React.ReactElement {
           transition: 'width 0.2s ease',
           flexShrink: 0,
         }}>
-          <Sidebar />
+          <Sidebar onOpenSettings={openSettings} />
         </div>
         <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
           <Canvas />
         </div>
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }

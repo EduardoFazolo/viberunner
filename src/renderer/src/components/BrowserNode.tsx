@@ -50,7 +50,7 @@ interface Props {
 }
 
 export function BrowserNode({ node }: Props): React.ReactElement {
-  const { update, remove, bringToFront, sendToBack, add } = useNodeStore()
+  const { update, remove, bringToFront, sendToBack, add, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const webviewRef = useRef<any>(null)
   const webviewAreaRef = useRef<HTMLDivElement>(null)
 
@@ -161,13 +161,6 @@ export function BrowserNode({ node }: Props): React.ReactElement {
     }
   }, [node.id, node.x, node.y, update, add])
 
-  useEffect(() => {
-    const el = webviewAreaRef.current
-    if (!el) return
-    const onWheel = (e: WheelEvent) => { if (!e.metaKey) e.stopPropagation() }
-    el.addEventListener('wheel', onWheel, { passive: true })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [])
 
   const handleBack = useCallback(() => {
     if (webviewRef.current) {
@@ -366,6 +359,13 @@ export function BrowserNode({ node }: Props): React.ReactElement {
                 src={thumbnail}
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 alt="Browser thumbnail"
+              />
+            )}
+            {/* Focus guard — blocks input to webview when not active, letting wheel events bubble to canvas */}
+            {focusedNodeId !== node.id && (
+              <div
+                style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }}
+                onPointerDown={(e) => { e.stopPropagation(); setFocusedNodeId(node.id) }}
               />
             )}
           </div>
