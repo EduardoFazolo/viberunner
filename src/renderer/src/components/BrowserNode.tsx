@@ -54,9 +54,10 @@ export function BrowserNode({ node }: Props): React.ReactElement {
   const webviewRef = useRef<any>(null)
   const webviewAreaRef = useRef<HTMLDivElement>(null)
 
-  const [urlBar, setUrlBar] = useState<string>(
-    (node.props.url as string) || 'https://google.com'
-  )
+  // Frozen on mount — changing this ref never re-navigates the webview
+  const initialUrl = useRef<string>((node.props.url as string) || 'https://google.com')
+
+  const [urlBar, setUrlBar] = useState<string>(initialUrl.current)
   const [loading, setLoading] = useState(false)
   const [thumbnail, setThumbnail] = useState<string | null>(null)
 
@@ -114,7 +115,10 @@ export function BrowserNode({ node }: Props): React.ReactElement {
       if (wv) {
         try {
           const url = (wv as any).getURL()
-          if (url) setUrlBar(url)
+          if (url) {
+            setUrlBar(url)
+            update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url } })
+          }
         } catch {
           // ignore
         }
@@ -122,11 +126,17 @@ export function BrowserNode({ node }: Props): React.ReactElement {
     }
 
     const onNavigate = (e: any) => {
-      if (e.url) setUrlBar(e.url)
+      if (e.url) {
+        setUrlBar(e.url)
+        update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url: e.url } })
+      }
     }
 
     const onNavigateInPage = (e: any) => {
-      if (e.url) setUrlBar(e.url)
+      if (e.url) {
+        setUrlBar(e.url)
+        update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url: e.url } })
+      }
     }
 
     const onTitleUpdated = (e: any) => {
@@ -348,7 +358,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
           >
             <webview
               ref={webviewRef}
-              src={(node.props.url as string) || 'https://google.com'}
+              src={initialUrl.current}
               partition="persist:canvaflow-ws-default"
               allowpopups=""
               style={{ width: '100%', height: '100%', display: 'flex' }}
