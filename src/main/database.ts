@@ -171,6 +171,20 @@ export function deleteNode(id: string): void {
   db.prepare('DELETE FROM canvas_nodes WHERE id = ?').run(id)
 }
 
+export function mergeNodeProps(nodeId: string, patch: Record<string, unknown>): void {
+  const row = db.prepare('SELECT props FROM canvas_nodes WHERE id = ?').get(nodeId) as { props: string } | null
+  if (!row) return
+  let current: Record<string, unknown> = {}
+  try { current = JSON.parse(row.props) } catch {}
+  const merged = JSON.stringify({ ...current, ...patch })
+  db.prepare('UPDATE canvas_nodes SET props = ?, updatedAt = ? WHERE id = ?')
+    .run(merged, Date.now(), nodeId)
+}
+
+export function getAllNodeIds(): string[] {
+  return (db.prepare('SELECT id FROM canvas_nodes').all() as { id: string }[]).map((r) => r.id)
+}
+
 // ---------------------------------------------------------------------------
 // Camera queries
 // ---------------------------------------------------------------------------

@@ -2,26 +2,16 @@ import React, { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { SerializeAddon } from '@xterm/addon-serialize'
 import { NodeData } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useNodeStore } from '../stores/nodeStore'
+import { useWorkspaceStore } from '../stores/workspaceStore'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
 } from './ui/context-menu'
 import '@xterm/xterm/css/xterm.css'
-
-declare global {
-  interface Window {
-    terminal: {
-      create: (id: string, cwd: string, shell: string) => Promise<void>
-      write: (id: string, data: string) => void
-      resize: (id: string, cols: number, rows: number) => void
-      kill: (id: string) => Promise<void>
-      onData: (id: string, cb: (data: string) => void) => () => void
-    }
-  }
-}
 
 interface Props {
   node: NodeData
@@ -31,11 +21,14 @@ export function TerminalNode({ node }: Props): React.ReactElement {
   const termRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const unsubRef = useRef<(() => void) | null>(null)
+  const serializeAddonRef = useRef<SerializeAddon | null>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { update, remove, bringToFront, sendToBack } = useNodeStore()
 
   useEffect(() => {
     if (!termRef.current) return
+
+    const workspaceId = useWorkspaceStore.getState().activeId || ''
 
     const term = new Terminal({
       fontFamily: 'JetBrains Mono, Menlo, Consolas, monospace',
@@ -43,7 +36,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       lineHeight: 1.2,
       cursorBlink: true,
       allowTransparency: false,
-      scrollback: 1000,
+      scrollback: 5000,
       theme: {
         background: '#0d0d0d',
         foreground: '#e8e8e8',
@@ -69,10 +62,10 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     })
 
     const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
-
+    const serializeAddon = new SerializeAddon()
     term.loadAddon(fitAddon)
-    term.loadAddon(webLinksAddon)
+    term.loadAddon(serializeAddon)
+    term.loadAddon(new WebLinksAddon())
 
     // Try WebGL renderer, fall back to canvas
     const loadRenderer = async () => {
@@ -81,11 +74,9 @@ export function TerminalNode({ node }: Props): React.ReactElement {
         const webglAddon = new WebglAddon()
         webglAddon.onContextLoss(() => webglAddon.dispose())
         term.loadAddon(webglAddon)
-        console.log('[terminal] WebGL renderer active')
       } catch {
         const { CanvasAddon } = await import('@xterm/addon-canvas')
         term.loadAddon(new CanvasAddon())
-        console.log('[terminal] Canvas renderer active (WebGL unavailable)')
       }
     }
 
@@ -95,25 +86,52 @@ export function TerminalNode({ node }: Props): React.ReactElement {
 
     xtermRef.current = term
     fitAddonRef.current = fitAddon
+    serializeAddonRef.current = serializeAddon
 
-    // Create PTY
+    // Restore previous scrollback from SQLite (written before tmux output starts)
+    const savedState = node.props.serializedState as string | undefined
+    if (savedState) {
+      term.write(savedState)
+    }
+
+    // Start PTY (via tmux if available)
     const cwd = (node.props.cwd as string) || ''
     const shell = (node.props.shell as string) || ''
-    window.terminal.create(node.id, cwd, shell)
+    window.terminal.create(node.id, workspaceId, cwd, shell)
 
     // PTY → xterm
     const unsub = window.terminal.onData(node.id, (data) => term.write(data))
-    unsubRef.current = unsub
 
     // xterm → PTY
     term.onData((data) => window.terminal.write(node.id, data))
 
+    // Autosave serialized scrollback every 60 seconds
+    saveTimerRef.current = setInterval(() => {
+      if (serializeAddonRef.current) {
+        const state = serializeAddonRef.current.serialize()
+        window.terminal.saveState(node.id, state)
+      }
+    }, 60_000)
+
     return () => {
+      // Serialize and save scrollback before teardown
+      if (serializeAddonRef.current) {
+        const state = serializeAddonRef.current.serialize()
+        window.terminal.saveState(node.id, state)
+      }
+
+      if (saveTimerRef.current) clearInterval(saveTimerRef.current)
+
       unsub()
       term.dispose()
-      window.terminal.kill(node.id)
+
+      // Kill the tmux session only if the node was explicitly deleted
+      const nodeDeleted = !useNodeStore.getState().nodes.has(node.id)
+      window.terminal.kill(node.id, workspaceId, nodeDeleted)
+
       xtermRef.current = null
       fitAddonRef.current = null
+      serializeAddonRef.current = null
     }
   }, [node.id])
 
@@ -127,8 +145,6 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     }, 50)
     return () => clearTimeout(timer)
   }, [node.width, node.height, node.minimized, node.id])
-
-  const TITLE_H = 32
 
   return (
     <ContextMenu>

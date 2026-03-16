@@ -1,9 +1,10 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, session } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { setupPtyHandlers, killAllPtys } from './pty'
-import { initDatabase } from './database'
+import { setupPtyHandlers, killAllPtys, cleanupOrphanSessions } from './pty'
+import { initDatabase, getAllNodeIds } from './database'
 import { setupWorkspaceHandlers } from './workspace'
+import { tmuxManager } from './tmux'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -42,13 +43,24 @@ function createWindow(): void {
   setupPtyHandlers(() => mainWindow?.webContents ?? null)
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   try {
     initDatabase()
   } catch (err) {
     console.error('[main] Database init failed, running without persistence:', err)
   }
   setupWorkspaceHandlers()
+
+  // Init tmux and clean up orphan sessions from deleted nodes
+  await tmuxManager.init()
+  await cleanupOrphanSessions(getAllNodeIds())
+
+  // Set a real Chrome UA on the browser-node partition so sites like YouTube don't block us
+  const browserSession = session.fromPartition('persist:canvaflow-ws-default')
+  browserSession.setUserAgent(
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+  )
+
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

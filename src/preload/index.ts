@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('terminal', {
-  create: (id: string, cwd: string, shell: string) =>
-    ipcRenderer.invoke('terminal:create', id, cwd, shell),
+  create: (id: string, workspaceId: string, cwd: string, shell: string) =>
+    ipcRenderer.invoke('terminal:create', id, workspaceId, cwd, shell),
 
   write: (id: string, data: string) =>
     ipcRenderer.send('terminal:write', id, data),
@@ -10,8 +10,12 @@ contextBridge.exposeInMainWorld('terminal', {
   resize: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke('terminal:resize', id, cols, rows),
 
-  kill: (id: string) =>
-    ipcRenderer.invoke('terminal:kill', id),
+  // deleteSession=true when the node is explicitly closed; false on workspace switch / app quit
+  kill: (id: string, workspaceId: string, deleteSession: boolean) =>
+    ipcRenderer.invoke('terminal:kill', id, workspaceId, deleteSession),
+
+  saveState: (nodeId: string, serializedState: string) =>
+    ipcRenderer.invoke('terminal:saveState', nodeId, serializedState),
 
   onData: (id: string, callback: (data: string) => void) => {
     const listener = (_event: unknown, termId: string, data: string) => {

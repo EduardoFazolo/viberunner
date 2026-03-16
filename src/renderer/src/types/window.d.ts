@@ -34,10 +34,11 @@ interface CameraRow {
 declare global {
   interface Window {
     terminal: {
-      create: (id: string, cwd: string, shell: string) => Promise<void>
+      create: (id: string, workspaceId: string, cwd: string, shell: string) => Promise<void>
       write: (id: string, data: string) => void
       resize: (id: string, cols: number, rows: number) => void
-      kill: (id: string) => Promise<void>
+      kill: (id: string, workspaceId: string, deleteSession: boolean) => Promise<void>
+      saveState: (nodeId: string, serializedState: string) => Promise<void>
       onData: (id: string, cb: (data: string) => void) => () => void
     }
 

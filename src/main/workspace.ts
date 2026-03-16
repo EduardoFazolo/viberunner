@@ -5,6 +5,7 @@ import {
   getNodes, saveNodes, deleteNode,
   getCamera, saveCamera,
   getAppState, setAppState,
+  mergeNodeProps,
   WorkspaceRow, NodeRow, CameraRow,
 } from './database'
 
@@ -58,4 +59,12 @@ export function setupWorkspaceHandlers(): void {
   ipcMain.handle('app:getState', (_e, key: string) => getAppState(key))
 
   ipcMain.handle('app:setState', (_e, key: string, value: string) => setAppState(key, value))
+
+  // -------------------------------------------------------------------------
+  // Terminal state serialization (xterm scrollback → SQLite)
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle('terminal:saveState', (_e, nodeId: string, serializedState: string) =>
+    mergeNodeProps(nodeId, { serializedState })
+  )
 }
