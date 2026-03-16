@@ -18,6 +18,12 @@ const MIN_ZOOM = 0.05
 const MAX_ZOOM = 5
 const ZOOM_SPEED = 0.001
 
+// Last known cursor position — updated by a global mousemove listener in Canvas
+export const cursorPos = { x: 0, y: 0 }
+if (typeof window !== 'undefined') {
+  window.addEventListener('mousemove', (e) => { cursorPos.x = e.clientX; cursorPos.y = e.clientY }, { passive: true })
+}
+
 export const useCameraStore = create<CameraStore>((set, get) => ({
   camera: { x: 0, y: 0, zoom: 1 },
 
@@ -43,9 +49,8 @@ export const useCameraStore = create<CameraStore>((set, get) => ({
 
   zoomByFactor: (factor) => set((s) => {
     const { camera } = s
-    const el = document.documentElement
-    const cx = el.clientWidth / 2
-    const cy = el.clientHeight / 2
+    const cx = cursorPos.x || document.documentElement.clientWidth / 2
+    const cy = cursorPos.y || document.documentElement.clientHeight / 2
     const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * factor))
     const zoomRatio = newZoom / camera.zoom
     return {

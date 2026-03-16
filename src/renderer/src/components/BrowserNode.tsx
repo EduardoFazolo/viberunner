@@ -375,7 +375,11 @@ export function BrowserNode({ node }: Props): React.ReactElement {
             {focusedNodeId !== node.id && (
               <div
                 style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }}
-                onPointerDown={(e) => { e.stopPropagation(); setFocusedNodeId(node.id) }}
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  setFocusedNodeId(node.id)
+                  setTimeout(() => (webviewRef.current as any)?.focus(), 0)
+                }}
               />
             )}
           </div>

@@ -188,7 +188,11 @@ export function TerminalNode({ node }: Props): React.ReactElement {
             {focusedNodeId !== node.id && (
               <div
                 style={{ position: 'absolute', inset: 0, zIndex: 9999, cursor: 'text' }}
-                onPointerDown={(e) => { e.stopPropagation(); setFocusedNodeId(node.id) }}
+                onPointerDown={(e) => {
+                  e.stopPropagation()
+                  setFocusedNodeId(node.id)
+                  setTimeout(() => xtermRef.current?.focus(), 0)
+                }}
               />
             )}
           </div>
