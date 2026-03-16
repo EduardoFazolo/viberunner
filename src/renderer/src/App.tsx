@@ -1,15 +1,19 @@
 import React from 'react'
 import { Canvas } from './components/Canvas'
-import { useNodeStore } from './stores/nodeStore'
+import { Sidebar } from './components/Sidebar'
+import { useAutoSave } from './hooks/useAutoSave'
+import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 
 export default function App(): React.ReactElement {
-  const nodeCount = useNodeStore((s) => s.nodes.size)
+  useWorkspaceInit()
+  useAutoSave()
+
   return (
-    <>
-      <div style={{ position: 'fixed', top: 10, left: 10, zIndex: 99999, background: '#1a1a2e', color: 'white', padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #444' }}>
-        nodes in store: {nodeCount}
+    <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+      <Sidebar />
+      <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+        <Canvas />
       </div>
-      <Canvas />
-    </>
+    </div>
   )
 }

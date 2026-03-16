@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { setupPtyHandlers, killAllPtys } from './pty'
+import { initDatabase } from './database'
+import { setupWorkspaceHandlers } from './workspace'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -22,7 +24,6 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show()
-    mainWindow!.webContents.openDevTools()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -35,6 +36,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  initDatabase()
+  setupWorkspaceHandlers()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -46,8 +49,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', killAllPtys)
-
-// IPC ping test
-ipcMain.handle('ping', () => 'pong')
 
 export { mainWindow }
