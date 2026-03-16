@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
+import { mkdirSync } from 'fs'
 
 // ---------------------------------------------------------------------------
 // Types (mirrored in renderer via preload)
@@ -44,11 +45,20 @@ export interface CameraRow {
 let db: Database.Database
 
 export function initDatabase(): void {
-  const dbPath = join(app.getPath('userData'), 'canvaflow.db')
-  db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  migrate()
+  const userDataPath = app.getPath('userData')
+  mkdirSync(userDataPath, { recursive: true })
+  const dbPath = join(userDataPath, 'canvaflow.db')
+
+  try {
+    db = new Database(dbPath, { verbose: undefined })
+    db.pragma('journal_mode = WAL')
+    db.pragma('foreign_keys = ON')
+    migrate()
+    console.log('[db] Initialized at', dbPath)
+  } catch (err) {
+    console.error('[db] Failed to initialize database:', err)
+    throw err
+  }
 }
 
 // ---------------------------------------------------------------------------

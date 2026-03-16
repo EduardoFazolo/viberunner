@@ -35,9 +35,13 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
     })
 
     ptyProcess.onData((data: string) => {
-      const wc = getWebContents()
-      if (wc && !wc.isDestroyed()) {
-        wc.send('terminal:data', id, data)
+      try {
+        const wc = getWebContents()
+        if (wc && !wc.isDestroyed()) {
+          wc.send('terminal:data', id, data)
+        }
+      } catch {
+        // webContents destroyed mid-flight — ignore
       }
     })
 

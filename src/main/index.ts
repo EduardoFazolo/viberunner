@@ -26,6 +26,11 @@ function createWindow(): void {
     mainWindow!.show()
   })
 
+  // Kill all PTYs before the webContents is destroyed so onData never fires into a dead window
+  mainWindow.on('close', () => {
+    killAllPtys()
+  })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -36,7 +41,11 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  initDatabase()
+  try {
+    initDatabase()
+  } catch (err) {
+    console.error('[main] Database init failed, running without persistence:', err)
+  }
   setupWorkspaceHandlers()
   createWindow()
   app.on('activate', () => {
