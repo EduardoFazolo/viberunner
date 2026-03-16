@@ -1,15 +1,22 @@
-import React, { useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { Canvas } from './components/Canvas'
 import { Sidebar, SIDEBAR_W } from './components/Sidebar'
-import { TitleBar, TITLEBAR_H } from './components/TitleBar'
+import { TitleBar } from './components/TitleBar'
+import { CommandPalette } from './components/CommandPalette'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
 export default function App(): React.ReactElement {
   useWorkspaceInit()
   useAutoSave()
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  const openPalette = useCallback(() => setPaletteOpen(true), [])
+
+  useKeyboardShortcuts({ onSearch: openPalette })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden' }}>
@@ -19,7 +26,6 @@ export default function App(): React.ReactElement {
         onToggleSidebar={() => setSidebarOpen((o) => !o)}
       />
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* Sidebar slides in/out */}
         <div style={{
           width: sidebarOpen ? SIDEBAR_W : 0,
           overflow: 'hidden',
@@ -28,11 +34,11 @@ export default function App(): React.ReactElement {
         }}>
           <Sidebar />
         </div>
-
         <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
           <Canvas />
         </div>
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   )
 }

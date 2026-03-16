@@ -11,6 +11,7 @@ interface CameraStore {
   setCamera: (camera: Camera) => void
   pan: (dx: number, dy: number) => void
   zoomAt: (screenX: number, screenY: number, delta: number) => void
+  zoomByFactor: (factor: number) => void
 }
 
 const MIN_ZOOM = 0.05
@@ -36,6 +37,22 @@ export const useCameraStore = create<CameraStore>((set, get) => ({
         zoom: newZoom,
         x: screenX - zoomRatio * (screenX - camera.x),
         y: screenY - zoomRatio * (screenY - camera.y),
+      }
+    }
+  }),
+
+  zoomByFactor: (factor) => set((s) => {
+    const { camera } = s
+    const el = document.documentElement
+    const cx = el.clientWidth / 2
+    const cy = el.clientHeight / 2
+    const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * factor))
+    const zoomRatio = newZoom / camera.zoom
+    return {
+      camera: {
+        zoom: newZoom,
+        x: cx - zoomRatio * (cx - camera.x),
+        y: cy - zoomRatio * (cy - camera.y),
       }
     }
   }),

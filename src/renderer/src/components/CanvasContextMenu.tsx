@@ -6,6 +6,7 @@ import {
   ContextMenuItem, ContextMenuSeparator
 } from './ui/context-menu'
 import { useCameraStore } from '../stores/cameraStore'
+import { fitAllNodes } from '../utils/canvasUtils'
 
 interface Props {
   camera: Camera
@@ -28,29 +29,17 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => add('terminal', clickWorldPos.current.x - 300, clickWorldPos.current.y - 200)}>
-          New Terminal
+          <span style={{ flex: 1 }}>New Terminal</span>
+          <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘T</span>
         </ContextMenuItem>
         <ContextMenuItem onClick={() => add('browser', clickWorldPos.current.x - 400, clickWorldPos.current.y - 300)}>
-          New Browser
+          <span style={{ flex: 1 }}>New Browser</span>
+          <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘B</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => {
-          const { nodes } = useNodeStore.getState()
-          if (nodes.size === 0) return
-          const all = Array.from(nodes.values())
-          const minX = Math.min(...all.map(n => n.x))
-          const minY = Math.min(...all.map(n => n.y))
-          const maxX = Math.max(...all.map(n => n.x + n.width))
-          const maxY = Math.max(...all.map(n => n.y + n.height))
-          const pw = window.innerWidth, ph = window.innerHeight
-          const zoom = Math.min(pw / (maxX - minX + 100), ph / (maxY - minY + 100), 1)
-          useCameraStore.getState().setCamera({
-            zoom,
-            x: (pw - (maxX + minX) * zoom) / 2,
-            y: (ph - (maxY + minY) * zoom) / 2,
-          })
-        }}>
-          Fit All Nodes
+        <ContextMenuItem onClick={() => fitAllNodes(useNodeStore.getState().nodes)}>
+          <span style={{ flex: 1 }}>Fit All Nodes</span>
+          <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘0</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

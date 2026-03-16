@@ -72,6 +72,14 @@ contextBridge.exposeInMainWorld('appState', {
     ipcRenderer.invoke('app:setState', key, value),
 })
 
+contextBridge.exposeInMainWorld('app', {
+  onShortcut: (cb: (name: string) => void) => {
+    const listener = (_: unknown, name: string) => cb(name)
+    ipcRenderer.on('shortcut', listener)
+    return () => ipcRenderer.removeListener('shortcut', listener)
+  },
+})
+
 // ---------------------------------------------------------------------------
 // Shared types (used in preload — renderer accesses via window.*)
 // ---------------------------------------------------------------------------
