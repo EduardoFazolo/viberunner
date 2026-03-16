@@ -1,0 +1,225 @@
+import React, { useCallback, useRef } from 'react'
+import { NodeData } from '../stores/nodeStore'
+import { useNodeStore } from '../stores/nodeStore'
+import { useCameraStore } from '../stores/cameraStore'
+
+const btnBase: React.CSSProperties = {
+  width: 22, height: 22,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'transparent',
+  border: 'none',
+  borderRadius: 4,
+  color: 'rgba(255,255,255,0.22)',
+  cursor: 'pointer',
+  padding: 0,
+  flexShrink: 0,
+  transition: 'background 0.1s, color 0.1s',
+}
+const btnHover: React.CSSProperties = {
+  ...btnBase,
+  background: 'rgba(255,255,255,0.07)',
+  color: 'rgba(255,255,255,0.7)',
+}
+const btnCloseHover: React.CSSProperties = {
+  ...btnBase,
+  background: 'rgba(239,68,68,0.15)',
+  color: 'rgba(239,68,68,0.85)',
+}
+
+interface Props {
+  node: NodeData
+  children?: React.ReactNode
+  onContextMenu?: (e: React.MouseEvent) => void
+}
+
+export function BaseNode({ node, children, onContextMenu }: Props): React.ReactElement {
+  const { update, bringToFront, remove } = useNodeStore()
+  const cameraRef = useRef(useCameraStore.getState().camera)
+
+  // Keep camera ref current without re-rendering
+  useCameraStore.subscribe((s) => { cameraRef.current = s.camera })
+
+  const isDragging = useRef(false)
+  const dragStart = useRef({ px: 0, py: 0, nx: 0, ny: 0 })
+
+  const isResizing = useRef(false)
+  const resizeStart = useRef({ px: 0, py: 0, nw: 0, nh: 0 })
+
+  const onHeaderPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    bringToFront(node.id)
+    isDragging.current = true
+    dragStart.current = { px: e.clientX, py: e.clientY, nx: node.x, ny: node.y }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }, [node.id, node.x, node.y, bringToFront])
+
+  const onHeaderPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isDragging.current) return
+    const zoom = cameraRef.current.zoom
+    const dx = (e.clientX - dragStart.current.px) / zoom
+    const dy = (e.clientY - dragStart.current.py) / zoom
+    update(node.id, {
+      x: dragStart.current.nx + dx,
+      y: dragStart.current.ny + dy,
+    })
+  }, [node.id, update])
+
+  const onHeaderPointerUp = useCallback(() => {
+    isDragging.current = false
+  }, [])
+
+  const onResizePointerDown = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    isResizing.current = true
+    resizeStart.current = { px: e.clientX, py: e.clientY, nw: node.width, nh: node.height }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }, [node.width, node.height])
+
+  const onResizePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isResizing.current) return
+    const zoom = cameraRef.current.zoom
+    const dw = (e.clientX - resizeStart.current.px) / zoom
+    const dh = (e.clientY - resizeStart.current.py) / zoom
+    update(node.id, {
+      width: Math.max(200, resizeStart.current.nw + dw),
+      height: Math.max(150, resizeStart.current.nh + dh),
+    })
+  }, [node.id, update])
+
+  const onResizePointerUp = useCallback(() => {
+    isResizing.current = false
+  }, [])
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: node.x,
+        top: node.y,
+        width: node.width,
+        zIndex: node.zIndex,
+        borderRadius: 8,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35)',
+        overflow: node.minimized ? 'visible' : 'hidden',
+      }}
+      onPointerDown={() => bringToFront(node.id)}
+      onContextMenu={onContextMenu}
+    >
+      {/* Title bar */}
+      <div
+        style={{
+          height: 32,
+          display: 'flex',
+          alignItems: 'center',
+          paddingLeft: 12,
+          paddingRight: 8,
+          gap: 4,
+          background: '#161616',
+          borderRadius: node.minimized ? 8 : '8px 8px 0 0',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderBottom: node.minimized ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(255,255,255,0.05)',
+          cursor: 'grab',
+          userSelect: 'none',
+        }}
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+      >
+        {/* Drag dots */}
+        <svg width="8" height="12" viewBox="0 0 8 12" style={{ opacity: 0.2, flexShrink: 0, marginRight: 6 }}>
+          <circle cx="2" cy="2" r="1.2" fill="white" />
+          <circle cx="6" cy="2" r="1.2" fill="white" />
+          <circle cx="2" cy="6" r="1.2" fill="white" />
+          <circle cx="6" cy="6" r="1.2" fill="white" />
+          <circle cx="2" cy="10" r="1.2" fill="white" />
+          <circle cx="6" cy="10" r="1.2" fill="white" />
+        </svg>
+
+        <span style={{
+          flex: 1,
+          fontSize: 11,
+          fontWeight: 500,
+          color: 'rgba(255,255,255,0.38)',
+          letterSpacing: '0.03em',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {node.title}
+        </span>
+
+        {/* Minimize button */}
+        <button
+          style={{ ...btnBase }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); update(node.id, { minimized: !node.minimized }) }}
+          title={node.minimized ? 'Restore' : 'Minimize'}
+          onMouseEnter={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnHover)}
+          onMouseLeave={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnBase)}
+        >
+          {node.minimized
+            ? <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
+            : <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 4h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          }
+        </button>
+
+        {/* Close button */}
+        <button
+          style={{ ...btnBase }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); remove(node.id) }}
+          title="Close"
+          onMouseEnter={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnCloseHover)}
+          onMouseLeave={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnBase)}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10">
+            <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Content */}
+      {!node.minimized && (
+        <div style={{
+          height: node.height - 32,
+          position: 'relative',
+          overflow: 'hidden',
+          background: '#0d0d0d',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderTop: 'none',
+          borderRadius: '0 0 8px 8px',
+        }}>
+          {children}
+        </div>
+      )}
+
+      {/* Resize handle */}
+      {!node.minimized && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: 16,
+            height: 16,
+            cursor: 'se-resize',
+            zIndex: 10,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'flex-end',
+            padding: 3,
+          }}
+          onPointerDown={onResizePointerDown}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={onResizePointerUp}
+        >
+          <svg width="7" height="7" viewBox="0 0 7 7" style={{ opacity: 0.2 }}>
+            <path d="M1 6h5V1" stroke="white" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+          </svg>
+        </div>
+      )}
+    </div>
+  )
+}
