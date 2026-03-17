@@ -1,5 +1,5 @@
-import { useCameraStore } from '../stores/cameraStore'
-import { useNodeStore } from '../stores/nodeStore'
+import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
+import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
 import { notionChunkToTiptap } from './notionToTiptap'
 
 export interface NotionCanvasDropPayload {
@@ -76,7 +76,8 @@ export function primeNotionExternalDrag(
 export async function createNotionNoteFromDrop(
   payload: NotionCanvasDropPayload,
   clientX: number,
-  clientY: number
+  clientY: number,
+  prefetchedChunk?: NotionPageChunk,
 ): Promise<void> {
   const canvasEl = document.querySelector('[data-canvas-root]')
   const canvasRect = canvasEl?.getBoundingClientRect()
@@ -93,7 +94,7 @@ export async function createNotionNoteFromDrop(
   useNodeStore.getState().update(newNode.id, { title: payload.title })
 
   try {
-    const chunk = await primeNotionPage(payload.partition, payload.pageId)
+    const chunk = prefetchedChunk ?? await primeNotionPage(payload.partition, payload.pageId)
     const imageMap: Record<string, string> = {}
 
     const setContent = (map: Record<string, string>) => {

@@ -18,7 +18,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: 'src/preload/index.ts',
-          notionWebview: 'src/preload/notionWebview.ts',
+          notionWebview: 'src/plugins/notion/preload/notionWebview.ts',
         }
       }
     }

@@ -1,16 +1,16 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { NodeData, useNodeStore } from '../stores/nodeStore'
-import { BaseNode } from './BaseNode'
-import { useCameraStore } from '../stores/cameraStore'
-import { useSessionStore } from '../stores/sessionStore'
-import { notionChunkToTiptap } from '../utils/notionToTiptap'
-import { getPreparedNotionExternalDrag, primeNotionExternalDrag } from '../utils/notionDrag'
-import { pasteIntoBrowser } from '../browserRegistry'
+import { NodeData, useNodeStore } from '../../../renderer/src/stores/nodeStore'
+import { BaseNode } from '../../../renderer/src/components/BaseNode'
+import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
+import { useSessionStore } from '../../../renderer/src/stores/sessionStore'
+import { useCanvasDrag } from '../../../renderer/src/hooks/useCanvasDrag'
+import { getPreparedNotionExternalDrag, primeNotionExternalDrag, createNotionNoteFromDrop } from '../utils/notionDrag'
+import { pasteIntoBrowser } from '../../../renderer/src/browserRegistry'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
-} from './ui/context-menu'
+} from '../../../renderer/src/components/ui/context-menu'
 
 declare global {
   namespace JSX {
@@ -264,15 +264,6 @@ const btnHover: React.CSSProperties = {
   color: 'rgba(255,255,255,0.75)',
 }
 
-interface DragState {
-  active: boolean
-  pageId: string
-  title: string
-  ghostX: number
-  ghostY: number
-  loading: boolean
-}
-
 interface DragDropTarget {
   nodeId: string
   nodeType: 'terminal' | 'browser'
@@ -298,18 +289,15 @@ export function NotionNode({ node }: Props): React.ReactElement {
   const [loading, setLoading] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
 
-  const [drag, setDrag] = useState<DragState>({
-    active: false, pageId: '', title: '', ghostX: 0, ghostY: 0, loading: false,
-  })
-  const dragRef = useRef(drag)
-  useEffect(() => { dragRef.current = drag }, [drag])
-  const activeDragSeq = useRef(0)
-  const completedDragSeq = useRef(0)
+  // Drag data stored in a ref so the drop callback doesn't need to re-subscribe
+  const dragDataRef = useRef<{ pageId: string; title: string } | null>(null)
+  const [activeDragTitle, setActiveDragTitle] = useState('')
+  const prevWebviewPos = useRef({ x: 0, y: 0 })
+  const prefetchedChunk = useRef<any>(null)
+
   const [dropTarget, setDropTarget] = useState<DragDropTarget | null>(null)
   const dropTargetRef = useRef<DragDropTarget | null>(null)
   useEffect(() => { dropTargetRef.current = dropTarget }, [dropTarget])
-  const prevWebviewPos = useRef({ x: 0, y: 0 })
-  const prefetchedChunk = useRef<any>(null)
 
   const cameraZoomRef = useRef(useCameraStore.getState().camera.zoom)
   const [isThumbnailMode, setIsThumbnailMode] = useState(
@@ -317,52 +305,9 @@ export function NotionNode({ node }: Props): React.ReactElement {
   )
   const [thumbnail, setThumbnail] = useState<string | null>(null)
 
-  // 1. Fetch preload path once
-  useEffect(() => {
-    window.app.notionPreloadPath().then(setPreloadPath)
-  }, [])
-
-  // 2. Camera zoom subscription for thumbnail mode
-  useEffect(() => {
-    const unsub = useCameraStore.subscribe((s) => {
-      const zoom = s.camera.zoom
-      const wasBelow = cameraZoomRef.current < 0.3
-      const isBelow = zoom < 0.3
-      if (!wasBelow && isBelow) {
-        if (webviewRef.current) {
-          try {
-            ;(webviewRef.current as any).capturePage().then((img: any) => {
-              setThumbnail(img.toDataURL())
-            }).catch(() => {})
-          } catch {}
-        }
-        setIsThumbnailMode(true)
-      }
-      if (wasBelow && !isBelow) setIsThumbnailMode(false)
-      cameraZoomRef.current = zoom
-    })
-    return unsub
-  }, [])
-
-  // 3a. Host-side Meta key detection — fires when host has focus (not webview).
-  //     Tells the preload to show/hide the overlay via executeJavaScript.
-  useEffect(() => {
-    const exec = (js: string) => {
-      try { ;(webviewRef.current as any)?.executeJavaScript(js) } catch {}
-    }
-    const onDown = (e: KeyboardEvent) => {
-      if (e.key === 'Meta') exec('window.__canvaflow_setMode&&window.__canvaflow_setMode(true)')
-    }
-    const onUp = (e: KeyboardEvent) => {
-      if (e.key === 'Meta') exec('window.__canvaflow_setMode&&window.__canvaflow_setMode(false)')
-    }
-    document.addEventListener('keydown', onDown)
-    document.addEventListener('keyup', onUp)
-    return () => {
-      document.removeEventListener('keydown', onDown)
-      document.removeEventListener('keyup', onUp)
-    }
-  }, [])
+  // ---------------------------------------------------------------------------
+  // Drop target detection
+  // ---------------------------------------------------------------------------
 
   const getDropTargetAt = useCallback((clientX: number, clientY: number): DragDropTarget | null => {
     const canvasEl = document.querySelector('[data-canvas-root]')
@@ -404,101 +349,118 @@ export function NotionNode({ node }: Props): React.ReactElement {
     }
   }, [node.id])
 
-  const getDraggedText = useCallback(async (pageId: string, title: string): Promise<string> => {
-    const prepared = getPreparedNotionExternalDrag(partition, pageId)
-    if (prepared) return prepared.text
+  // ---------------------------------------------------------------------------
+  // Core drag hook
+  // ---------------------------------------------------------------------------
 
-    try {
-      const result = await primeNotionExternalDrag(partition, pageId, title)
-      return result.text
-    } catch {
-      return title
-    }
-  }, [partition])
+  const { isDragging, ghostX, ghostY, startDrag, nudge, cancel } = useCanvasDrag({
+    onMove: useCallback((clientX: number, clientY: number) => {
+      setDropTarget(getDropTargetAt(clientX, clientY))
+    }, [getDropTargetAt]),
 
-  const finishDragDrop = useCallback(async (clientX: number, clientY: number, dragSeq: number) => {
-    if (completedDragSeq.current === dragSeq) return
-    completedDragSeq.current = dragSeq
+    onDrop: useCallback(async (clientX: number, clientY: number) => {
+      setDropTarget(null)
+      const data = dragDataRef.current
+      if (!data) return
+      dragDataRef.current = null
+      const { pageId, title } = data
 
-    const canvasEl = document.querySelector('[data-canvas-root]')
-    const canvasRect = canvasEl?.getBoundingClientRect()
-    const { pageId, title } = dragRef.current
-    const target = dropTargetRef.current
+      const target = dropTargetRef.current
 
-    setDrag({ active: false, pageId: '', title: '', ghostX: 0, ghostY: 0, loading: false })
-    setDropTarget(null)
-
-    if (!pageId) return
-
-    if (target) {
-      const text = await getDraggedText(pageId, title)
-      if (target.nodeType === 'terminal') {
-        useNodeStore.getState().setFocusedNodeId(target.nodeId)
-        window.terminal.write(target.nodeId, text)
-        return
-      }
-      if (target.nodeType === 'browser') {
-        await pasteIntoBrowser(target.nodeId, text)
-        return
-      }
-    }
-
-    if (
-      canvasRect &&
-      clientX >= canvasRect.left && clientX <= canvasRect.right &&
-      clientY >= canvasRect.top && clientY <= canvasRect.bottom
-    ) {
-      const camera = useCameraStore.getState().camera
-      const wx = (clientX - canvasRect.left - camera.x) / camera.zoom
-      const wy = (clientY - canvasRect.top - camera.y) / camera.zoom
-
-      const newNode = useNodeStore.getState().add('note', wx - 150, wy - 100, {
-        content: null,
-        showToolbar: false,
-      })
-      useNodeStore.getState().update(newNode.id, { title })
-
-      ;(async () => {
-        try {
-          const chunk = prefetchedChunk.current ?? await window.notion.fetchPage(partition, pageId)
-          prefetchedChunk.current = null
-
-          const imageMap: Record<string, string> = {}
-          const setContent = (map: Record<string, string>) => {
-            const current = useNodeStore.getState().nodes.get(newNode.id)
-            if (!current) return
-            useNodeStore.getState().update(newNode.id, {
-              props: { ...current.props, content: notionChunkToTiptap(pageId, chunk.recordMap.block, map) },
-            })
-          }
-          setContent(imageMap)
-
-          const imageBlocks = Object.values(chunk.recordMap.block)
-            .filter((b: any) => b.value.type === 'image')
-            .map((b: any) => ({
-              blockId: b.value.id as string,
-              src: (b.value.format?.display_source ?? b.value.properties?.source?.[0]?.[0]) as string,
-            }))
-            .filter((item): item is { blockId: string; src: string } => typeof item.src === 'string')
-
-          await Promise.all(imageBlocks.map(async ({ blockId, src }) => {
-            try {
-              const dataUrl = await window.notion.fetchImage(partition, src, blockId)
-              imageMap[src] = dataUrl
-              setContent({ ...imageMap })
-            } catch (err) {
-              console.error('[NotionNode] fetchImage failed for', src, err)
-            }
-          }))
-        } catch (err) {
-          console.error('Failed to fetch Notion page:', err)
+      if (target) {
+        let text = title
+        const prepared = getPreparedNotionExternalDrag(partition, pageId)
+        if (prepared) {
+          text = prepared.text
+        } else {
+          try {
+            const result = await primeNotionExternalDrag(partition, pageId, title)
+            text = result.text
+          } catch {}
         }
-      })()
-    }
-  }, [getDraggedText, partition])
 
-  // 3b. Webview event listeners — must re-run after preloadPath resolves so
-  //     webviewRef.current is populated when the webview finally mounts.
+        if (target.nodeType === 'terminal') {
+          useNodeStore.getState().setFocusedNodeId(target.nodeId)
+          window.terminal.write(target.nodeId, text)
+          return
+        }
+        if (target.nodeType === 'browser') {
+          await pasteIntoBrowser(target.nodeId, text)
+          return
+        }
+      }
+
+      // Drop on canvas — create a note node
+      const chunk = prefetchedChunk.current
+      prefetchedChunk.current = null
+      await createNotionNoteFromDrop(
+        { partition, pageId, title },
+        clientX,
+        clientY,
+        chunk ?? undefined,
+      )
+    }, [partition]),
+  })
+
+  // ---------------------------------------------------------------------------
+  // 1. Fetch preload path once
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    window.app.notionPreloadPath().then(setPreloadPath)
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // 2. Camera zoom subscription for thumbnail mode
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const unsub = useCameraStore.subscribe((s) => {
+      const zoom = s.camera.zoom
+      const wasBelow = cameraZoomRef.current < 0.3
+      const isBelow = zoom < 0.3
+      if (!wasBelow && isBelow) {
+        if (webviewRef.current) {
+          try {
+            ;(webviewRef.current as any).capturePage().then((img: any) => {
+              setThumbnail(img.toDataURL())
+            }).catch(() => {})
+          } catch {}
+        }
+        setIsThumbnailMode(true)
+      }
+      if (wasBelow && !isBelow) setIsThumbnailMode(false)
+      cameraZoomRef.current = zoom
+    })
+    return unsub
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // 3a. Host-side Meta key detection
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const exec = (js: string) => {
+      try { ;(webviewRef.current as any)?.executeJavaScript(js) } catch {}
+    }
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key === 'Meta') exec('window.__canvaflow_setMode&&window.__canvaflow_setMode(true)')
+    }
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === 'Meta') exec('window.__canvaflow_setMode&&window.__canvaflow_setMode(false)')
+    }
+    document.addEventListener('keydown', onDown)
+    document.addEventListener('keyup', onUp)
+    return () => {
+      document.removeEventListener('keydown', onDown)
+      document.removeEventListener('keyup', onUp)
+    }
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // 3b. Webview event listeners
+  // ---------------------------------------------------------------------------
+
   useEffect(() => {
     const wv = webviewRef.current
     if (!wv) return
@@ -515,19 +477,18 @@ export function NotionNode({ node }: Props): React.ReactElement {
     wv.addEventListener('did-fail-load', onFail)
     wv.addEventListener('page-title-updated', onTitle)
 
-    // IPC messages from webview preload
-    const onIpcMessage = async (e: any) => {
+    // IPC messages from webview preload — intentionally synchronous, no awaits
+    const onIpcMessage = (e: any) => {
       const { channel, args } = e
       if (channel === 'notion:drag-start') {
         const { pageId, title, x, y } = args[0]
-        const dragSeq = activeDragSeq.current + 1
-        activeDragSeq.current = dragSeq
-        completedDragSeq.current = 0
         prevWebviewPos.current = { x, y }
         prefetchedChunk.current = null
+        dragDataRef.current = { pageId, title }
+        setActiveDragTitle(title)
         setDropTarget(null)
-        const pos = await window.app.getCursorPos().catch(() => ({ x: -9999, y: -9999 }))
-        setDrag({ active: true, pageId, title, ghostX: pos.x, ghostY: pos.y, loading: false })
+        startDrag()
+        // Prefetch page content fire-and-forget
         window.notion.fetchPage(partition, pageId)
           .then(chunk => { prefetchedChunk.current = chunk })
           .catch(() => {})
@@ -540,14 +501,12 @@ export function NotionNode({ node }: Props): React.ReactElement {
         const rect = (webviewRef.current as HTMLElement).getBoundingClientRect()
         const scaleX = rect.width / node.width
         const scaleY = rect.height / (node.height - TITLE_H - TOOLBAR_H)
-        setDrag(d => ({ ...d, ghostX: d.ghostX + dx * scaleX, ghostY: d.ghostY + dy * scaleY }))
-      } else if (channel === 'notion:drag-end') {
-        const pos = await window.app.getCursorPos().catch(() => ({ x: prevWebviewPos.current.x, y: prevWebviewPos.current.y }))
-        await finishDragDrop(pos.x, pos.y, activeDragSeq.current)
+        nudge(dx * scaleX, dy * scaleY)
       } else if (channel === 'notion:drag-cancel') {
         prefetchedChunk.current = null
+        dragDataRef.current = null
         setDropTarget(null)
-        setDrag(d => ({ ...d, active: false }))
+        cancel()
       }
     }
     wv.addEventListener('ipc-message', onIpcMessage)
@@ -559,28 +518,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('page-title-updated', onTitle)
       wv.removeEventListener('ipc-message', onIpcMessage)
     }
-  }, [finishDragDrop, node.id, partition, preloadPath, update])
-
-  // 4. Host-side pointer tracking when drag is active
-  useEffect(() => {
-    if (!drag.active) return
-
-    const onMove = (e: PointerEvent) => {
-      setDrag(d => ({ ...d, ghostX: e.clientX, ghostY: e.clientY }))
-      setDropTarget(getDropTargetAt(e.clientX, e.clientY))
-    }
-
-    const onUp = async (e: PointerEvent) => {
-      await finishDragDrop(e.clientX, e.clientY, activeDragSeq.current)
-    }
-
-    document.addEventListener('pointermove', onMove)
-    document.addEventListener('pointerup', onUp)
-    return () => {
-      document.removeEventListener('pointermove', onMove)
-      document.removeEventListener('pointerup', onUp)
-    }
-  }, [drag.active, finishDragDrop, getDropTargetAt])
+  }, [node.id, partition, preloadPath, update, startDrag, nudge, cancel])
 
   const handleReload = useCallback(() => {
     if (!webviewRef.current) return
@@ -627,7 +565,6 @@ export function NotionNode({ node }: Props): React.ReactElement {
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {/* Notion logo + label */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
               <div style={{
                 width: 18, height: 18, borderRadius: 4,
@@ -645,7 +582,6 @@ export function NotionNode({ node }: Props): React.ReactElement {
 
             <div style={{ flex: 1 }} />
 
-            {/* Reload */}
             <button
               style={{ ...btnBase }}
               title={loading ? 'Stop' : 'Reload'}
@@ -664,7 +600,6 @@ export function NotionNode({ node }: Props): React.ReactElement {
               )}
             </button>
 
-            {/* Login button */}
             <button
               onPointerDown={(e) => e.stopPropagation()}
               onClick={handleLogin}
@@ -683,7 +618,6 @@ export function NotionNode({ node }: Props): React.ReactElement {
               {loggingIn ? 'Waiting…' : 'Log in'}
             </button>
 
-            {/* Session picker */}
             <SessionPicker sessionId={sessionId} nodeId={node.id} onChange={handleSessionChange} />
           </div>
 
@@ -756,6 +690,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
 
     </ContextMenu>
 
+    {/* Drop target highlight */}
     {dropTarget && createPortal(
       <div style={{
         position: 'fixed',
@@ -793,11 +728,11 @@ export function NotionNode({ node }: Props): React.ReactElement {
     )}
 
     {/* Drag ghost — portalled to body to escape canvas CSS transform */}
-    {drag.active && createPortal(
+    {isDragging && createPortal(
       <div style={{
         position: 'fixed',
-        left: drag.ghostX - 120,
-        top: drag.ghostY - 24,
+        left: ghostX - 120,
+        top: ghostY - 24,
         zIndex: 999999,
         pointerEvents: 'none',
         width: 240,
@@ -808,14 +743,13 @@ export function NotionNode({ node }: Props): React.ReactElement {
         transform: 'rotate(1.5deg) scale(1.03)',
         transformOrigin: '50% 20%',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        opacity: drag.loading ? 0.7 : 1,
       }}>
         <div style={{ padding: '10px 12px 8px' }}>
           <div style={{
             fontSize: 13, fontWeight: 600, color: '#37352f',
             lineHeight: 1.4, marginBottom: 8, wordBreak: 'break-word',
           }}>
-            {drag.title || 'Untitled'}
+            {activeDragTitle || 'Untitled'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <div style={{ height: 7, borderRadius: 3, background: 'rgba(55,53,47,0.08)', width: '85%' }} />
@@ -836,7 +770,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
             <svg width="7" height="7" viewBox="0 0 10 10" fill="none">
               <path d="M5 1v6M2 5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            {drag.loading ? 'Fetching…' : 'Drop on canvas'}
+            Drop on canvas
           </div>
           <div style={{
             width: 16, height: 16, borderRadius: 3, background: '#f1f0ef',
