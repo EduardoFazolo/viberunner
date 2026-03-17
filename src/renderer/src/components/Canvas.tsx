@@ -6,6 +6,7 @@ import { GridRenderer } from './GridRenderer'
 import { CanvasOverlay } from './CanvasOverlay'
 import { NodeLayer } from './NodeLayer'
 import { CanvasContextMenu } from './CanvasContextMenu'
+import { createNotionNoteFromDrop, NotionCanvasDropPayload } from '../utils/notionDrag'
 
 export function Canvas(): React.ReactElement {
   const { camera, pan, zoomAt } = useCameraStore()
@@ -75,6 +76,25 @@ export function Canvas(): React.ReactElement {
     if (e.code === 'Space') { spaceHeldRef.current = false; setSpaceHeld(false) }
   }, [])
 
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/canvaflow-notion-page')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    const raw = e.dataTransfer.getData('application/canvaflow-notion-page')
+    if (!raw) return
+    e.preventDefault()
+    try {
+      const payload = JSON.parse(raw) as NotionCanvasDropPayload
+      void createNotionNoteFromDrop(payload, e.clientX, e.clientY)
+    } catch (err) {
+      console.error('Invalid Notion drag payload:', err)
+    }
+  }, [])
+
   return (
     <CanvasContextMenu camera={camera}>
       <div
@@ -93,6 +113,8 @@ export function Canvas(): React.ReactElement {
         onPointerUp={onPointerUp}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
       >
         <GridRenderer camera={camera} />
         <CanvasOverlay camera={camera}>

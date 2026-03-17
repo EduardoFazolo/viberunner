@@ -3,6 +3,7 @@ import { NodeData, useNodeStore } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useCameraStore } from '../stores/cameraStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { registerBrowserPaster, unregisterBrowserPaster } from '../browserRegistry'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -311,6 +312,78 @@ export function BrowserNode({ node }: Props): React.ReactElement {
   const [isThumbnailMode, setIsThumbnailMode] = useState(
     useCameraStore.getState().camera.zoom < 0.3
   )
+
+  useEffect(() => {
+    registerBrowserPaster(node.id, async (text: string) => {
+      useNodeStore.getState().setFocusedNodeId(node.id)
+      try { ;(webviewRef.current as any)?.focus() } catch {}
+
+      const js = `
+        (() => {
+          const text = ${JSON.stringify(text)}
+          const active = document.activeElement
+
+          const isTextInput = (el) =>
+            el instanceof HTMLTextAreaElement ||
+            (el instanceof HTMLInputElement && (!el.type || ['text', 'search', 'url', 'email', 'tel', 'password'].includes(el.type)))
+
+          const insert = (el) => {
+            if (!el) return false
+
+            if (isTextInput(el)) {
+              const start = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length
+              const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : el.value.length
+              el.focus()
+              el.setRangeText(text, start, end, 'end')
+              el.dispatchEvent(new Event('input', { bubbles: true }))
+              el.dispatchEvent(new Event('change', { bubbles: true }))
+              return true
+            }
+
+            if (el instanceof HTMLElement && el.isContentEditable) {
+              el.focus()
+              const sel = window.getSelection()
+              if (!sel) return false
+              if (!sel.rangeCount) {
+                const range = document.createRange()
+                range.selectNodeContents(el)
+                range.collapse(false)
+                sel.removeAllRanges()
+                sel.addRange(range)
+              }
+              if (document.execCommand) {
+                try {
+                  if (document.execCommand('insertText', false, text)) return true
+                } catch {}
+              }
+              const range = sel.getRangeAt(0)
+              range.deleteContents()
+              range.insertNode(document.createTextNode(text))
+              range.collapse(false)
+              sel.removeAllRanges()
+              sel.addRange(range)
+              return true
+            }
+
+            return false
+          }
+
+          if (insert(active)) return true
+
+          const fallback = document.querySelector('textarea, input:not([type]), input[type="text"], input[type="search"], input[type="url"], [contenteditable="true"], [contenteditable=""], [role="textbox"]')
+          return insert(fallback)
+        })()
+      `
+
+      try {
+        return Boolean(await (webviewRef.current as any)?.executeJavaScript(js))
+      } catch {
+        return false
+      }
+    })
+
+    return () => unregisterBrowserPaster(node.id)
+  }, [node.id])
 
   // Subscribe to camera zoom changes for thumbnail mode
   useEffect(() => {

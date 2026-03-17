@@ -4,7 +4,9 @@ import { NodeData, useNodeStore } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useCameraStore } from '../stores/cameraStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { notionChunkToTiptap, IMAGE_LOADING_PLACEHOLDER } from '../utils/notionToTiptap'
+import { notionChunkToTiptap } from '../utils/notionToTiptap'
+import { getPreparedNotionExternalDrag, primeNotionExternalDrag } from '../utils/notionDrag'
+import { pasteIntoBrowser } from '../browserRegistry'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -271,6 +273,16 @@ interface DragState {
   loading: boolean
 }
 
+interface DragDropTarget {
+  nodeId: string
+  nodeType: 'terminal' | 'browser'
+  title: string
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 interface Props {
   node: NodeData
 }
@@ -291,6 +303,9 @@ export function NotionNode({ node }: Props): React.ReactElement {
   })
   const dragRef = useRef(drag)
   useEffect(() => { dragRef.current = drag }, [drag])
+  const [dropTarget, setDropTarget] = useState<DragDropTarget | null>(null)
+  const dropTargetRef = useRef<DragDropTarget | null>(null)
+  useEffect(() => { dropTargetRef.current = dropTarget }, [dropTarget])
   const prevWebviewPos = useRef({ x: 0, y: 0 })
   const prefetchedChunk = useRef<any>(null)
 
@@ -372,12 +387,14 @@ export function NotionNode({ node }: Props): React.ReactElement {
         const { pageId, title, x, y } = args[0]
         prevWebviewPos.current = { x, y }
         prefetchedChunk.current = null
+        setDropTarget(null)
         // Ghost starts off-screen; first drag-move / host pointermove will position it
         setDrag({ active: true, pageId, title, ghostX: -9999, ghostY: -9999, loading: false })
         // Prefetch is fully fire-and-forget — never touches drag state
         window.notion.fetchPage(partition, pageId)
           .then(chunk => { prefetchedChunk.current = chunk })
           .catch(() => {})
+        void primeNotionExternalDrag(partition, pageId, title).catch(() => {})
       } else if (channel === 'notion:drag-move') {
         const { x, y } = args[0]
         const dx = x - prevWebviewPos.current.x
@@ -391,6 +408,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
         // Host pointerup handles the actual drop — nothing to do here
       } else if (channel === 'notion:drag-cancel') {
         prefetchedChunk.current = null
+        setDropTarget(null)
         setDrag(d => ({ ...d, active: false }))
       }
     }
@@ -405,21 +423,89 @@ export function NotionNode({ node }: Props): React.ReactElement {
     }
   }, [node.id, partition, preloadPath, update])
 
+  const getDropTargetAt = useCallback((clientX: number, clientY: number): DragDropTarget | null => {
+    const canvasEl = document.querySelector('[data-canvas-root]')
+    const canvasRect = canvasEl?.getBoundingClientRect()
+    if (!canvasRect) return null
+
+    const { camera } = useCameraStore.getState()
+    const candidates = Array.from(useNodeStore.getState().nodes.values())
+      .filter((candidate) =>
+        candidate.id !== node.id &&
+        (candidate.type === 'terminal' || candidate.type === 'browser')
+      )
+      .map((candidate) => {
+        const left = canvasRect.left + camera.x + candidate.x * camera.zoom
+        const top = canvasRect.top + camera.y + candidate.y * camera.zoom
+        const width = candidate.width * camera.zoom
+        const height = (candidate.minimized ? 32 : candidate.height) * camera.zoom
+        return { candidate, left, top, width, height }
+      })
+      .filter(({ left, top, width, height }) =>
+        clientX >= left &&
+        clientX <= left + width &&
+        clientY >= top &&
+        clientY <= top + height
+      )
+      .sort((a, b) => b.candidate.zIndex - a.candidate.zIndex)
+
+    const hit = candidates[0]
+    if (!hit) return null
+
+    return {
+      nodeId: hit.candidate.id,
+      nodeType: hit.candidate.type as 'terminal' | 'browser',
+      title: hit.candidate.title,
+      left: hit.left,
+      top: hit.top,
+      width: hit.width,
+      height: hit.height,
+    }
+  }, [node.id])
+
+  const getDraggedText = useCallback(async (pageId: string, title: string): Promise<string> => {
+    const prepared = getPreparedNotionExternalDrag(partition, pageId)
+    if (prepared) return prepared.text
+
+    try {
+      const result = await primeNotionExternalDrag(partition, pageId, title)
+      return result.text
+    } catch {
+      return title
+    }
+  }, [partition])
+
   // 4. Host-side pointer tracking when drag is active
   useEffect(() => {
     if (!drag.active) return
 
     const onMove = (e: PointerEvent) => {
       setDrag(d => ({ ...d, ghostX: e.clientX, ghostY: e.clientY }))
+      setDropTarget(getDropTargetAt(e.clientX, e.clientY))
     }
 
-    const onUp = (e: PointerEvent) => {
+    const onUp = async (e: PointerEvent) => {
       const canvasEl = document.querySelector('[data-canvas-root]')
       const canvasRect = canvasEl?.getBoundingClientRect()
       const { pageId, title } = dragRef.current
+      const target = dropTargetRef.current
 
       // Hide ghost immediately — no blocking work on this frame
       setDrag({ active: false, pageId: '', title: '', ghostX: 0, ghostY: 0, loading: false })
+      setDropTarget(null)
+
+      if (target) {
+        const text = await getDraggedText(pageId, title)
+        if (target.nodeType === 'terminal') {
+          useNodeStore.getState().setFocusedNodeId(target.nodeId)
+          window.terminal.write(target.nodeId, text)
+          return
+        }
+        if (target.nodeType === 'browser') {
+          await pasteIntoBrowser(target.nodeId, text)
+          return
+        }
+      }
 
       if (
         canvasRect &&
@@ -485,7 +571,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
     }
-  }, [drag.active, partition])
+  }, [drag.active, getDraggedText, getDropTargetAt, partition])
 
   const handleReload = useCallback(() => {
     if (!webviewRef.current) return
@@ -660,6 +746,42 @@ export function NotionNode({ node }: Props): React.ReactElement {
       </ContextMenuContent>
 
     </ContextMenu>
+
+    {dropTarget && createPortal(
+      <div style={{
+        position: 'fixed',
+        left: dropTarget.left,
+        top: dropTarget.top,
+        width: dropTarget.width,
+        height: dropTarget.height,
+        zIndex: 999998,
+        pointerEvents: 'none',
+        borderRadius: 8,
+        border: '1.5px solid rgba(167,139,250,0.65)',
+        background: 'rgba(167,139,250,0.12)',
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.06), 0 0 0 1px rgba(167,139,250,0.2)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        boxSizing: 'border-box',
+      }}>
+        <div style={{
+          background: 'rgba(19,16,29,0.92)',
+          color: 'rgba(255,255,255,0.9)',
+          borderRadius: 999,
+          padding: '8px 14px',
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: '0.01em',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+          textAlign: 'center',
+        }}>
+          {dropTarget.nodeType === 'terminal' ? 'Drop to copy into terminal' : 'Drop to copy into browser'}
+        </div>
+      </div>,
+      document.body
+    )}
 
     {/* Drag ghost — portalled to body to escape canvas CSS transform */}
     {drag.active && createPortal(

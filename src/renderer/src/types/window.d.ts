@@ -88,6 +88,21 @@ declare global {
           }}>
         }
       }>
+      prepareExternalDrag: (
+        partition: string,
+        pageId: string,
+        title: string,
+        pageUrl?: string
+      ) => Promise<{
+        title: string
+        text: string
+        html: string
+        markdown: string
+        filename: string
+        filePath: string
+        fileUrl: string
+        pageUrl: string
+      }>
     }
 
     sessions: {

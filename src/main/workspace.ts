@@ -1,8 +1,10 @@
 import { ipcMain, IpcMainEvent, dialog, BrowserWindow, session, screen } from 'electron'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
+import { pathToFileURL } from 'url'
 import { setupBrowserSession } from './browserSession'
+import { buildNotionExport } from './notionExport'
 import {
   getWorkspaces, saveWorkspace, deleteWorkspace,
   getNodes, saveNodes, deleteNode,
@@ -197,6 +199,12 @@ export function setupWorkspaceHandlers(): void {
   const formatUuid = (id: string): string =>
     id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
 
+  const sanitizeFileName = (value: string): string => {
+    const trimmed = value.trim().replace(/\s+/g, ' ')
+    const safe = trimmed.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '').trim()
+    return (safe || 'Untitled').slice(0, 80)
+  }
+
   const buildCookieHeader = async (ses: Electron.Session, url: string): Promise<string> => {
     const cookies = await ses.cookies.get({ url })
     return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
@@ -221,7 +229,33 @@ export function setupWorkspaceHandlers(): void {
     }
   }
 
-  ipcMain.handle('notion:fetchImage', async (_e, partition: string, imageUrl: string, blockId?: string) => {
+  const fetchNotionPageChunk = async (partition: string, pageId: string): Promise<any> => {
+    const ses = session.fromPartition(partition)
+    const cookies = await ses.cookies.get({ url: 'https://www.notion.so' })
+    const tokenCookie = cookies.find((c) => c.name === 'token_v2')
+    if (!tokenCookie) throw new Error('Not logged in to Notion (no token_v2 cookie)')
+
+    const res = await fetch(`${NOTION_ORIGIN}/api/v3/loadPageChunk`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'cookie': `token_v2=${tokenCookie.value}`,
+        'user-agent': NOTION_UA,
+      },
+      body: JSON.stringify({
+        pageId: formatUuid(pageId),
+        limit: 100,
+        cursor: { stack: [] },
+        chunkNumber: 0,
+        verticalColumns: false,
+      }),
+    })
+
+    if (!res.ok) throw new Error(`Notion API returned ${res.status}`)
+    return res.json()
+  }
+
+  const fetchNotionImageDataUrl = async (partition: string, imageUrl: string, blockId?: string): Promise<string> => {
     const sharp = require('sharp')
     const ses = session.fromPartition(partition)
     const notionCookieHeader = await buildCookieHeader(ses, NOTION_ORIGIN)
@@ -290,34 +324,55 @@ export function setupWorkspaceHandlers(): void {
       const ct = (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0]
       return `data:${ct};base64,${buf.toString('base64')}`
     }
-  })
+  }
 
-  ipcMain.handle('notion:fetchPage', async (_e, partition: string, pageId: string) => {
-    const ses = session.fromPartition(partition)
-    const cookies = await ses.cookies.get({ url: 'https://www.notion.so' })
-    const tokenCookie = cookies.find((c) => c.name === 'token_v2')
-    if (!tokenCookie) throw new Error('Not logged in to Notion (no token_v2 cookie)')
+  ipcMain.handle('notion:fetchImage', async (_e, partition: string, imageUrl: string, blockId?: string) =>
+    fetchNotionImageDataUrl(partition, imageUrl, blockId)
+  )
 
-    // Format pageId as UUID with dashes
-    const uuid = pageId.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
+  ipcMain.handle(
+    'notion:prepareExternalDrag',
+    async (_e, partition: string, pageId: string, title: string, pageUrl?: string) => {
+      const chunk = await fetchNotionPageChunk(partition, pageId)
+      const imageBlocks = Object.values(chunk.recordMap.block)
+        .filter((b: any) => b.value.type === 'image')
+        .map((b: any) => ({
+          blockId: b.value.id as string,
+          src: (b.value.format?.display_source ?? b.value.properties?.source?.[0]?.[0]) as string,
+        }))
+        .filter((item): item is { blockId: string; src: string } => typeof item.src === 'string')
 
-    const res = await fetch('https://www.notion.so/api/v3/loadPageChunk', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'cookie': `token_v2=${tokenCookie.value}`,
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      },
-      body: JSON.stringify({
-        pageId: uuid,
-        limit: 100,
-        cursor: { stack: [] },
-        chunkNumber: 0,
-        verticalColumns: false,
-      }),
-    })
+      const imageMap: Record<string, string> = {}
+      await Promise.all(imageBlocks.map(async ({ blockId, src }) => {
+        try {
+          imageMap[src] = await fetchNotionImageDataUrl(partition, src, blockId)
+        } catch (err) {
+          console.error('[notion:prepareExternalDrag] fetchImage failed for', src, err)
+        }
+      }))
 
-    if (!res.ok) throw new Error(`Notion API returned ${res.status}`)
-    return res.json()
-  })
+      const exported = buildNotionExport(pageId, chunk.recordMap.block, imageMap)
+      const effectiveTitle = title.trim() || 'Untitled'
+      const tempDir = await fs.promises.mkdtemp(path.join(tmpdir(), 'canvaflow-notion-drag-'))
+      const filename = `${sanitizeFileName(effectiveTitle)}.md`
+      const filePath = path.join(tempDir, filename)
+
+      await fs.promises.writeFile(filePath, exported.markdown || `# ${effectiveTitle}\n`, 'utf8')
+
+      return {
+        title: effectiveTitle,
+        text: exported.text || effectiveTitle,
+        html: exported.html || `<h1>${effectiveTitle}</h1>`,
+        markdown: exported.markdown || `# ${effectiveTitle}\n`,
+        filename,
+        filePath,
+        fileUrl: pathToFileURL(filePath).toString(),
+        pageUrl: pageUrl || `${NOTION_ORIGIN}/${pageId}`,
+      }
+    }
+  )
+
+  ipcMain.handle('notion:fetchPage', async (_e, partition: string, pageId: string) =>
+    fetchNotionPageChunk(partition, pageId)
+  )
 }
