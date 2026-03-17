@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 import { NodeData } from '../stores/nodeStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
@@ -26,6 +26,66 @@ const btnCloseHover: React.CSSProperties = {
   ...btnBase,
   background: 'rgba(239,68,68,0.15)',
   color: 'rgba(239,68,68,0.85)',
+}
+
+function TitleField({ node, focused }: { node: NodeData; focused: boolean }): React.ReactElement {
+  const { update } = useNodeStore()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(node.title)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const commit = useCallback(() => {
+    const trimmed = draft.trim()
+    if (trimmed) update(node.id, { title: trimmed })
+    else setDraft(node.title)
+    setEditing(false)
+  }, [draft, node.id, node.title, update])
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === 'Escape') commit()
+          e.stopPropagation()
+        }}
+        onBlur={commit}
+        onPointerDown={(e) => e.stopPropagation()}
+        autoFocus
+        style={{
+          flex: 1, height: 20, fontSize: 11, fontWeight: 500,
+          color: 'rgba(255,255,255,0.85)',
+          background: 'rgba(255,255,255,0.07)',
+          border: '1px solid rgba(167,139,250,0.4)',
+          borderRadius: 3, padding: '0 5px', outline: 'none',
+          fontFamily: 'inherit', letterSpacing: '0.03em',
+        }}
+      />
+    )
+  }
+
+  return (
+    <span
+      onDoubleClick={(e) => { e.stopPropagation(); setDraft(node.title); setEditing(true) }}
+      title="Double-click to rename"
+      style={{
+        flex: 1,
+        fontSize: 11,
+        fontWeight: 500,
+        color: focused ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.3)',
+        transition: 'color 0.15s',
+        letterSpacing: '0.03em',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        cursor: 'grab',
+      }}
+    >
+      {node.title}
+    </span>
+  )
 }
 
 interface Props {
@@ -156,19 +216,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): 
           <circle cx="6" cy="10" r="1.2" fill="white" />
         </svg>
 
-        <span style={{
-          flex: 1,
-          fontSize: 11,
-          fontWeight: 500,
-          color: focused ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.3)',
-          transition: 'color 0.15s',
-          letterSpacing: '0.03em',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          {node.title}
-        </span>
+        <TitleField node={node} focused={focused} />
 
         {titleExtra}
 
