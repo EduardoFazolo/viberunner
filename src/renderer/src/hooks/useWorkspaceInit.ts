@@ -37,8 +37,10 @@ export function useWorkspaceInit(): void {
     async function init() {
       const api = window
 
-      // Load settings early so terminals can read them on first spawn
+      // Load settings and templates early
       useSettingsStore.getState().load()
+      const { useTemplateStore } = await import('../stores/templateStore')
+      useTemplateStore.getState().load()
 
       // Load all workspaces from DB
       let dbWorkspaces: Workspace[] = []

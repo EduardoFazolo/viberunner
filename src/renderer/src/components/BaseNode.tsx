@@ -2,6 +2,8 @@ import React, { useCallback, useRef } from 'react'
 import { NodeData } from '../stores/nodeStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
+import { useTemplateStore } from '../stores/templateStore'
+import { SIDEBAR_W } from './Sidebar'
 
 const btnBase: React.CSSProperties = {
   width: 22, height: 22,
@@ -34,6 +36,7 @@ interface Props {
 
 export function BaseNode({ node, children, onContextMenu }: Props): React.ReactElement {
   const { update, bringToFront, remove, focusedNodeId, setFocusedNodeId } = useNodeStore()
+  const { setDraggingOverSidebar, add: addTemplate } = useTemplateStore()
   const focused = focusedNodeId === node.id
   const cameraRef = useRef(useCameraStore.getState().camera)
 
@@ -64,11 +67,19 @@ export function BaseNode({ node, children, onContextMenu }: Props): React.ReactE
       x: dragStart.current.nx + dx,
       y: dragStart.current.ny + dy,
     })
-  }, [node.id, update])
+    setDraggingOverSidebar(e.clientX < SIDEBAR_W)
+  }, [node.id, update, setDraggingOverSidebar])
 
-  const onHeaderPointerUp = useCallback(() => {
+  const onHeaderPointerUp = useCallback((e: React.PointerEvent) => {
+    if (isDragging.current && e.clientX < SIDEBAR_W) {
+      // Drop onto sidebar — save as template and snap node back to original position
+      const { serializedState: _s, ...safeProps } = node.props as any
+      addTemplate({ type: node.type, title: node.title, props: safeProps })
+      update(node.id, { x: dragStart.current.nx, y: dragStart.current.ny })
+    }
+    setDraggingOverSidebar(false)
     isDragging.current = false
-  }, [])
+  }, [node, addTemplate, update, setDraggingOverSidebar])
 
   const onResizePointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation()

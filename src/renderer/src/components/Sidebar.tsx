@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useWorkspaceStore, Workspace, NodeSummary } from '../stores/workspaceStore'
 import { useNodeStore } from '../stores/nodeStore'
+import { useTemplateStore, NodeTemplate } from '../stores/templateStore'
+import { useCameraStore } from '../stores/cameraStore'
 import { loadWorkspaceCanvas } from '../hooks/useWorkspaceInit'
+import { getCanvasRect } from '../utils/canvasUtils'
 
 export const SIDEBAR_W = 240
 
@@ -363,8 +366,13 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace }: {
 export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): React.ReactElement {
   const { workspaces, activeId, setActive, removeWorkspace, touchWorkspace, nodeSummaries, setNodeSummaries } =
     useWorkspaceStore()
+  const { templates, loaded: templatesLoaded, load: loadTemplates, remove: removeTemplate,
+    draggingOverSidebar, draggedTemplate, dragGhostPos,
+    startTemplateDrag, updateTemplateDragPos, endTemplateDrag } = useTemplateStore()
   const [showAdd, setShowAdd] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
+  useEffect(() => { if (!templatesLoaded) loadTemplates() }, [templatesLoaded, loadTemplates])
 
   // Keep active workspace's node summaries in sync with live nodeStore
   useEffect(() => {
@@ -383,6 +391,30 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
     })
     return unsub
   }, [setNodeSummaries])
+
+  // Handle template drag-out to canvas
+  useEffect(() => {
+    if (!draggedTemplate) return
+    const onMove = (e: PointerEvent) => updateTemplateDragPos(e.clientX, e.clientY)
+    const onUp = (e: PointerEvent) => {
+      const canvasRect = document.querySelector('[data-canvas-root]')?.getBoundingClientRect()
+      if (canvasRect &&
+        e.clientX >= canvasRect.left && e.clientX <= canvasRect.right &&
+        e.clientY >= canvasRect.top && e.clientY <= canvasRect.bottom) {
+        const camera = useCameraStore.getState().camera
+        const wx = (e.clientX - canvasRect.left - camera.x) / camera.zoom
+        const wy = (e.clientY - canvasRect.top - camera.y) / camera.zoom
+        useNodeStore.getState().add(draggedTemplate.type as any, wx - 300, wy - 150, draggedTemplate.props)
+      }
+      endTemplateDrag()
+    }
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    return () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+    }
+  }, [draggedTemplate, updateTemplateDragPos, endTemplateDrag])
 
   const handleSwitch = async (id: string) => {
     if (id === activeId) return
@@ -403,12 +435,15 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
       <div style={{
         width: SIDEBAR_W,
         height: '100%',
-        background: '#111111',
-        borderRight: '1px solid rgba(255,255,255,0.06)',
+        background: draggingOverSidebar ? '#1a1a2e' : '#111111',
+        borderRight: draggingOverSidebar
+          ? '1px solid rgba(167,139,250,0.4)'
+          : '1px solid rgba(255,255,255,0.06)',
         display: 'flex',
         flexDirection: 'column',
         flexShrink: 0,
         overflow: 'hidden',
+        transition: 'background 0.15s, border-color 0.15s',
       }}>
         {/* Section label + add button */}
         <div style={{
@@ -452,6 +487,29 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
           )}
         </div>
 
+        {/* Library */}
+        {(templates.length > 0 || draggingOverSidebar) && (
+          <div style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{
+              padding: '7px 12px 5px',
+              fontSize: 10.5, fontWeight: 600,
+              color: draggingOverSidebar ? 'rgba(167,139,250,0.7)' : 'rgba(255,255,255,0.25)',
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+              transition: 'color 0.15s',
+            }}>
+              {draggingOverSidebar ? 'Drop to save' : 'Library'}
+            </div>
+            {templates.map(t => (
+              <TemplateItem
+                key={t.id}
+                template={t}
+                onDragStart={(e) => startTemplateDrag(t, e.clientX, e.clientY)}
+                onRemove={() => removeTemplate(t.id)}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Bottom toolbar */}
         <div style={{
           flexShrink: 0, padding: '6px 8px',
@@ -462,6 +520,28 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
         </div>
       </div>
 
+      {/* Template drag ghost */}
+      {draggedTemplate && (
+        <div style={{
+          position: 'fixed',
+          left: dragGhostPos.x + 12,
+          top: dragGhostPos.y + 12,
+          zIndex: 999999,
+          pointerEvents: 'none',
+          background: '#1e1e1e',
+          border: '1px solid rgba(167,139,250,0.4)',
+          borderRadius: 6,
+          padding: '5px 10px',
+          display: 'flex', alignItems: 'center', gap: 7,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+          fontSize: 12, color: 'rgba(255,255,255,0.75)',
+          whiteSpace: 'nowrap',
+        }}>
+          <NodeTypeIcon type={draggedTemplate.type} />
+          {draggedTemplate.title}
+        </div>
+      )}
+
       {showAdd && <AddWorkspaceDialog onClose={() => setShowAdd(false)} />}
       {confirmDeleteId && (
         <DeleteConfirm
@@ -471,6 +551,52 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
         />
       )}
     </>
+  )
+}
+
+function TemplateItem({ template, onDragStart, onRemove }: {
+  template: NodeTemplate
+  onDragStart: (e: React.PointerEvent) => void
+  onRemove: () => void
+}): React.ReactElement {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 7,
+        height: 28, padding: '0 8px 0 12px',
+        cursor: 'grab',
+        background: hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
+        margin: '0 4px', borderRadius: 5,
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onPointerDown={onDragStart}
+    >
+      <NodeTypeIcon type={template.type} />
+      <span style={{
+        flex: 1, fontSize: 11.5,
+        color: hovered ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {template.title}
+      </span>
+      {hovered && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onRemove}
+          style={{
+            width: 14, height: 14, border: 'none', background: 'transparent',
+            color: 'rgba(255,255,255,0.25)', cursor: 'pointer', padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}
+        >
+          <svg width="8" height="8" viewBox="0 0 8 8">
+            <path d="M1 1l6 6M7 1l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      )}
+    </div>
   )
 }
 
