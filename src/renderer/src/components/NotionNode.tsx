@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { NodeData, useNodeStore } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useCameraStore } from '../stores/cameraStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { notionChunkToTiptap } from '../utils/notionToTiptap'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -15,6 +17,7 @@ declare global {
         src?: string
         partition?: string
         allowpopups?: string
+        preload?: string
         ref?: React.Ref<HTMLElement>
       }
     }
@@ -259,6 +262,15 @@ const btnHover: React.CSSProperties = {
   color: 'rgba(255,255,255,0.75)',
 }
 
+interface DragState {
+  active: boolean
+  pageId: string
+  title: string
+  ghostX: number
+  ghostY: number
+  loading: boolean
+}
+
 interface Props {
   node: NodeData
 }
@@ -266,6 +278,7 @@ interface Props {
 export function NotionNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const webviewRef = useRef<any>(null)
+  const [preloadPath, setPreloadPath] = useState<string | null>(null)
 
   const sessionId = node.props.sessionId as string | undefined
   const partition = getPartition(sessionId, node.id)
@@ -273,12 +286,25 @@ export function NotionNode({ node }: Props): React.ReactElement {
   const [loading, setLoading] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
 
+  const [drag, setDrag] = useState<DragState>({
+    active: false, pageId: '', title: '', ghostX: 0, ghostY: 0, loading: false,
+  })
+  const dragRef = useRef(drag)
+  useEffect(() => { dragRef.current = drag }, [drag])
+  const prevWebviewPos = useRef({ x: 0, y: 0 })
+
   const cameraZoomRef = useRef(useCameraStore.getState().camera.zoom)
   const [isThumbnailMode, setIsThumbnailMode] = useState(
     useCameraStore.getState().camera.zoom < 0.3
   )
   const [thumbnail, setThumbnail] = useState<string | null>(null)
 
+  // 1. Fetch preload path once
+  useEffect(() => {
+    window.app.notionPreloadPath().then(setPreloadPath)
+  }, [])
+
+  // 2. Camera zoom subscription for thumbnail mode
   useEffect(() => {
     const unsub = useCameraStore.subscribe((s) => {
       const zoom = s.camera.zoom
@@ -300,6 +326,28 @@ export function NotionNode({ node }: Props): React.ReactElement {
     return unsub
   }, [])
 
+  // 3a. Host-side Meta key detection — fires when host has focus (not webview).
+  //     Tells the preload to show/hide the overlay via executeJavaScript.
+  useEffect(() => {
+    const exec = (js: string) => {
+      try { ;(webviewRef.current as any)?.executeJavaScript(js) } catch {}
+    }
+    const onDown = (e: KeyboardEvent) => {
+      if (e.key === 'Meta') exec('window.__canvaflow_setMode&&window.__canvaflow_setMode(true)')
+    }
+    const onUp = (e: KeyboardEvent) => {
+      if (e.key === 'Meta') exec('window.__canvaflow_setMode&&window.__canvaflow_setMode(false)')
+    }
+    document.addEventListener('keydown', onDown)
+    document.addEventListener('keyup', onUp)
+    return () => {
+      document.removeEventListener('keydown', onDown)
+      document.removeEventListener('keyup', onUp)
+    }
+  }, [])
+
+  // 3b. Webview event listeners — must re-run after preloadPath resolves so
+  //     webviewRef.current is populated when the webview finally mounts.
   useEffect(() => {
     const wv = webviewRef.current
     if (!wv) return
@@ -316,13 +364,90 @@ export function NotionNode({ node }: Props): React.ReactElement {
     wv.addEventListener('did-fail-load', onFail)
     wv.addEventListener('page-title-updated', onTitle)
 
+    // IPC messages from webview preload
+    const onIpcMessage = async (e: any) => {
+      const { channel, args } = e
+      if (channel === 'notion:drag-start') {
+        const { pageId, title, x, y } = args[0]
+        prevWebviewPos.current = { x, y }
+        // Ask main process for the true cursor position — bypasses any coord system mismatch
+        const pos = await window.app.getCursorPos()
+        setDrag({ active: true, pageId, title, ghostX: pos.x, ghostY: pos.y, loading: false })
+      } else if (channel === 'notion:drag-move') {
+        const { x, y } = args[0]
+        // Delta-track relative to the last known webview position, scaled to viewport
+        const dx = x - prevWebviewPos.current.x
+        const dy = y - prevWebviewPos.current.y
+        prevWebviewPos.current = { x, y }
+        const rect = (webviewRef.current as HTMLElement).getBoundingClientRect()
+        const scaleX = rect.width / node.width
+        const scaleY = rect.height / (node.height - TITLE_H - TOOLBAR_H)
+        setDrag(d => ({ ...d, ghostX: d.ghostX + dx * scaleX, ghostY: d.ghostY + dy * scaleY }))
+      } else if (channel === 'notion:drag-end') {
+        // Host pointerup handles the actual drop — nothing to do here
+      } else if (channel === 'notion:drag-cancel') {
+        setDrag(d => ({ ...d, active: false }))
+      }
+    }
+    wv.addEventListener('ipc-message', onIpcMessage)
+
     return () => {
       wv.removeEventListener('did-start-loading', onStart)
       wv.removeEventListener('did-stop-loading', onStop)
       wv.removeEventListener('did-fail-load', onFail)
       wv.removeEventListener('page-title-updated', onTitle)
+      wv.removeEventListener('ipc-message', onIpcMessage)
     }
-  }, [node.id, partition, update])
+  }, [node.id, partition, preloadPath, update])
+
+  // 4. Host-side pointer tracking when drag is active
+  useEffect(() => {
+    if (!drag.active) return
+
+    const onMove = (e: PointerEvent) => {
+      setDrag(d => ({ ...d, ghostX: e.clientX, ghostY: e.clientY }))
+    }
+
+    const onUp = async (e: PointerEvent) => {
+      const canvasEl = document.querySelector('[data-canvas-root]')
+      const canvasRect = canvasEl?.getBoundingClientRect()
+      const { pageId, title } = dragRef.current
+
+      setDrag(d => ({ ...d, loading: true }))
+
+      if (
+        canvasRect &&
+        e.clientX >= canvasRect.left && e.clientX <= canvasRect.right &&
+        e.clientY >= canvasRect.top && e.clientY <= canvasRect.bottom
+      ) {
+        try {
+          const camera = useCameraStore.getState().camera
+          const wx = (e.clientX - canvasRect.left - camera.x) / camera.zoom
+          const wy = (e.clientY - canvasRect.top - camera.y) / camera.zoom
+
+          const chunk = await window.notion.fetchPage(partition, pageId)
+          const content = notionChunkToTiptap(pageId, chunk.recordMap.block)
+
+          const newNode = useNodeStore.getState().add('note', wx - 150, wy - 100, {
+            content,
+            showToolbar: false,
+          })
+          useNodeStore.getState().update(newNode.id, { title })
+        } catch (err) {
+          console.error('Failed to fetch Notion page:', err)
+        }
+      }
+
+      setDrag({ active: false, pageId: '', title: '', ghostX: 0, ghostY: 0, loading: false })
+    }
+
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    return () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+    }
+  }, [drag.active, partition])
 
   const handleReload = useCallback(() => {
     if (!webviewRef.current) return
@@ -353,6 +478,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
   const webviewHeight = node.height - TITLE_H - TOOLBAR_H
 
   return (
+    <>
     <ContextMenu>
       <ContextMenuTrigger>
         <BaseNode node={node}>
@@ -449,14 +575,17 @@ export function NotionNode({ node }: Props): React.ReactElement {
               }
             }}
           >
-            <webview
-              key={partition}
-              ref={webviewRef}
-              src="https://www.notion.so"
-              partition={partition}
-              allowpopups=""
-              style={{ width: '100%', height: '100%', display: 'flex' }}
-            />
+            {preloadPath && (
+              <webview
+                key={partition}
+                ref={webviewRef}
+                src="https://www.notion.so"
+                partition={partition}
+                preload={preloadPath}
+                allowpopups=""
+                style={{ width: '100%', height: '100%', display: 'flex' }}
+              />
+            )}
             {isThumbnailMode && thumbnail && (
               <img
                 src={thumbnail}
@@ -491,6 +620,67 @@ export function NotionNode({ node }: Props): React.ReactElement {
           Close
         </ContextMenuItem>
       </ContextMenuContent>
+
     </ContextMenu>
+
+    {/* Drag ghost — portalled to body to escape canvas CSS transform */}
+    {drag.active && createPortal(
+      <div style={{
+        position: 'fixed',
+        left: drag.ghostX - 120,
+        top: drag.ghostY - 24,
+        zIndex: 999999,
+        pointerEvents: 'none',
+        width: 240,
+        background: '#ffffff',
+        border: '1px solid rgba(55,53,47,0.12)',
+        borderRadius: 6,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.10)',
+        transform: 'rotate(1.5deg) scale(1.03)',
+        transformOrigin: '50% 20%',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        opacity: drag.loading ? 0.7 : 1,
+      }}>
+        <div style={{ padding: '10px 12px 8px' }}>
+          <div style={{
+            fontSize: 13, fontWeight: 600, color: '#37352f',
+            lineHeight: 1.4, marginBottom: 8, wordBreak: 'break-word',
+          }}>
+            {drag.title || 'Untitled'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div style={{ height: 7, borderRadius: 3, background: 'rgba(55,53,47,0.08)', width: '85%' }} />
+            <div style={{ height: 7, borderRadius: 3, background: 'rgba(55,53,47,0.08)', width: '65%' }} />
+          </div>
+        </div>
+        <div style={{
+          padding: '5px 12px 8px',
+          borderTop: '1px solid rgba(55,53,47,0.06)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: 'rgba(124,58,237,0.08)', borderRadius: 20,
+            padding: '2px 7px', fontSize: 10, fontWeight: 600,
+            color: 'rgba(109,40,217,0.85)', letterSpacing: '0.01em',
+          }}>
+            <svg width="7" height="7" viewBox="0 0 10 10" fill="none">
+              <path d="M5 1v6M2 5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {drag.loading ? 'Fetching…' : 'Drop on canvas'}
+          </div>
+          <div style={{
+            width: 16, height: 16, borderRadius: 3, background: '#f1f0ef',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <svg width="9" height="9" viewBox="0 0 14 14" fill="#37352f">
+              <path d="M3.08 2.17c1.65-.12 4.16-.18 5.62-.16 1.58.02 2.08.44 2.14 1.95.08 1.68.08 4.22 0 5.9-.06 1.48-.52 1.91-2.03 1.96-1.61.06-4.15.06-5.79 0-1.43-.05-1.95-.5-2.02-1.86-.08-1.73-.09-4.36 0-6.08.07-1.34.59-1.6 2.08-1.71Zm.45 1.36v6.95h6.94V3.53H3.53Zm1.26 1.17h3.95v.91H6.99v3.09h-.98V5.61H4.79V4.7Z"/>
+            </svg>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   )
 }

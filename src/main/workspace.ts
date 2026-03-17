@@ -1,4 +1,4 @@
-import { ipcMain, IpcMainEvent, dialog, BrowserWindow, session } from 'electron'
+import { ipcMain, IpcMainEvent, dialog, BrowserWindow, session, screen } from 'electron'
 import { homedir } from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -169,5 +169,53 @@ export function setupWorkspaceHandlers(): void {
       })
       proc.on('error', reject)
     })
+  })
+
+  // -------------------------------------------------------------------------
+  // Notion
+  // -------------------------------------------------------------------------
+
+  // Returns cursor position in renderer client coordinates (logical px, no DPR confusion)
+  ipcMain.handle('app:getCursorPos', () => {
+    const cursor = screen.getCursorScreenPoint()
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    if (!win) return { x: 0, y: 0 }
+    const b = win.getContentBounds()
+    return { x: cursor.x - b.x, y: cursor.y - b.y }
+  })
+
+  ipcMain.handle('app:notionPreloadPath', () => {
+    // Electron webview preload attribute requires a file:// URL, not a raw path
+    const filePath = path.join(__dirname, '../preload/notionWebview.js')
+    return `file://${filePath}`
+  })
+
+  ipcMain.handle('notion:fetchPage', async (_e, partition: string, pageId: string) => {
+    const ses = session.fromPartition(partition)
+    const cookies = await ses.cookies.get({ url: 'https://www.notion.so' })
+    const tokenCookie = cookies.find((c) => c.name === 'token_v2')
+    if (!tokenCookie) throw new Error('Not logged in to Notion (no token_v2 cookie)')
+
+    // Format pageId as UUID with dashes
+    const uuid = pageId.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
+
+    const res = await fetch('https://www.notion.so/api/v3/loadPageChunk', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'cookie': `token_v2=${tokenCookie.value}`,
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify({
+        pageId: uuid,
+        limit: 100,
+        cursor: { stack: [] },
+        chunkNumber: 0,
+        verticalColumns: false,
+      }),
+    })
+
+    if (!res.ok) throw new Error(`Notion API returned ${res.status}`)
+    return res.json()
   })
 }

@@ -108,6 +108,15 @@ contextBridge.exposeInMainWorld('app', {
     ipcRenderer.on('shortcut', listener)
     return () => ipcRenderer.removeListener('shortcut', listener)
   },
+  notionPreloadPath: (): Promise<string> =>
+    ipcRenderer.invoke('app:notionPreloadPath'),
+  getCursorPos: (): Promise<{ x: number; y: number }> =>
+    ipcRenderer.invoke('app:getCursorPos'),
+})
+
+contextBridge.exposeInMainWorld('notion', {
+  fetchPage: (partition: string, pageId: string): Promise<NotionPageChunk> =>
+    ipcRenderer.invoke('notion:fetchPage', partition, pageId),
 })
 
 // ---------------------------------------------------------------------------
@@ -157,3 +166,19 @@ export interface BrowserSessionRow {
   name: string
   createdAt: number
 }
+
+export interface NotionPageChunk {
+  recordMap: {
+    block: Record<string, { value: NotionBlock }>
+  }
+}
+
+export interface NotionBlock {
+  id: string
+  type: string
+  properties?: Record<string, NotionRichText[][]>
+  content?: string[]
+  parent_id?: string
+}
+
+export type NotionRichText = string | string[][]

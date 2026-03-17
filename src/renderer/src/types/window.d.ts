@@ -72,6 +72,21 @@ declare global {
 
     app: {
       onShortcut: (cb: (name: string) => void) => () => void
+      notionPreloadPath: () => Promise<string>
+      getCursorPos: () => Promise<{ x: number; y: number }>
+    }
+
+    notion: {
+      fetchPage: (partition: string, pageId: string) => Promise<{
+        recordMap: {
+          block: Record<string, { value: {
+            id: string
+            type: string
+            properties?: Record<string, any[][]>
+            content?: string[]
+          }}>
+        }
+      }>
     }
 
     sessions: {

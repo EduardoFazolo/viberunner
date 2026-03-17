@@ -13,7 +13,15 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: 'src/preload/index.ts',
+          notionWebview: 'src/preload/notionWebview.ts',
+        }
+      }
+    }
   },
   renderer: {
     resolve: {
