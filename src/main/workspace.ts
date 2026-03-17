@@ -1,7 +1,8 @@
-import { ipcMain, IpcMainEvent, dialog, BrowserWindow } from 'electron'
+import { ipcMain, IpcMainEvent, dialog, BrowserWindow, session } from 'electron'
 import { homedir } from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
+import { setupBrowserSession } from './browserSession'
 import {
   getWorkspaces, saveWorkspace, deleteWorkspace,
   getNodes, saveNodes, deleteNode,
@@ -86,6 +87,31 @@ export function setupWorkspaceHandlers(): void {
   ipcMain.handle('sessions:save', (_e, s: BrowserSessionRow) => saveBrowserSession(s))
 
   ipcMain.handle('sessions:delete', (_e, id: string) => deleteBrowserSession(id))
+
+  // Opens a real BrowserWindow (no webview restrictions) for OAuth/login.
+  // The window uses the given partition so cookies land in the right session.
+  // Resolves when the user closes the window.
+  ipcMain.handle('session:openLoginWindow', async (_e, partition: string, url: string) => {
+    const ses = session.fromPartition(partition)
+    setupBrowserSession(ses)
+
+    const win = new BrowserWindow({
+      width: 1000,
+      height: 720,
+      autoHideMenuBar: true,
+      webPreferences: {
+        session: ses,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    })
+
+    win.loadURL(url)
+
+    return new Promise<void>((resolve) => {
+      win.on('closed', () => resolve())
+    })
+  })
 
   // -------------------------------------------------------------------------
   // File system

@@ -78,6 +78,7 @@ declare global {
       getAll: () => Promise<BrowserSessionRow[]>
       save: (s: BrowserSessionRow) => Promise<void>
       delete: (id: string) => Promise<void>
+      login: (partition: string, url: string) => Promise<void>
     }
 
     git: {

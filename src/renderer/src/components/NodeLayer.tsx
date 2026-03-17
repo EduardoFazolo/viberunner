@@ -5,6 +5,7 @@ import { useVisibleNodes } from '../hooks/useVisibleNodes'
 import { TerminalNode } from './TerminalNode'
 import { BrowserNode } from './BrowserNode'
 import { FilesNode } from './FilesNode'
+import { NotionNode } from './NotionNode'
 
 export function NodeLayer(): React.ReactElement {
   const nodes = useNodeStore((s) => s.nodes)
@@ -17,6 +18,7 @@ return (
         if (node.type === 'terminal') return <TerminalNode key={node.id} node={node} />
         if (node.type === 'browser') return <BrowserNode key={node.id} node={node} />
         if (node.type === 'files') return <FilesNode key={node.id} node={node} />
+        if (node.type === 'notion') return <NotionNode key={node.id} node={node} />
         return null
       })}
     </>

@@ -1,10 +1,11 @@
-import { app, BrowserWindow, session } from 'electron'
+import { app, BrowserWindow, session, WebContents } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { setupPtyHandlers, killAllPtys, cleanupOrphanSessions } from './pty'
 import { initDatabase, getAllNodeIds } from './database'
 import { setupWorkspaceHandlers } from './workspace'
 import { tmuxManager } from './tmux'
+import { setupBrowserSession } from './browserSession'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -41,6 +42,8 @@ function createWindow(): void {
     else if (mod && (input.key === '=' || input.key === '+')) { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomIn') }
     else if (mod && input.key === '-') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomOut') }
     else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
+    else if (mod && input.key === 'n') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newNotion') }
+
   })
 
   // Kill all PTYs before the webContents is destroyed so onData never fires into a dead window
@@ -55,6 +58,26 @@ function createWindow(): void {
   }
 
   setupPtyHandlers(() => mainWindow?.webContents ?? null)
+
+  // Apply session setup to every webview that attaches (covers named sessions too)
+  mainWindow.webContents.on('did-attach-webview', (_event, webviewContents: WebContents) => {
+    setupBrowserSession(webviewContents.session)
+
+    // Popup windows (OAuth etc.) inherit the webview's session so cookies are shared
+    webviewContents.setWindowOpenHandler((_details) => ({
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        width: 520,
+        height: 640,
+        autoHideMenuBar: true,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          session: webviewContents.session,
+        },
+      },
+    }))
+  })
 }
 
 app.whenReady().then(async () => {
@@ -69,11 +92,8 @@ app.whenReady().then(async () => {
   await tmuxManager.init()
   await cleanupOrphanSessions(getAllNodeIds())
 
-  // Set a real Chrome UA on the browser-node partition so sites like YouTube don't block us
-  const browserSession = session.fromPartition('persist:canvaflow-ws-default')
-  browserSession.setUserAgent(
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-  )
+  // Set up default browser session
+  setupBrowserSession(session.fromPartition('persist:canvaflow-ws-default'))
 
   createWindow()
   app.on('activate', () => {

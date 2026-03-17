@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('sessions', {
 
   delete: (id: string): Promise<void> =>
     ipcRenderer.invoke('sessions:delete', id),
+
+  login: (partition: string, url: string): Promise<void> =>
+    ipcRenderer.invoke('session:openLoginWindow', partition, url),
 })
 
 contextBridge.exposeInMainWorld('git', {

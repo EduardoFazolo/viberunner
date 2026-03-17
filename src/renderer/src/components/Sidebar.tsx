@@ -60,6 +60,13 @@ function NodeTypeIcon({ type }: { type: string }): React.ReactElement {
       </svg>
     )
   }
+  if (type === 'notion') {
+    return (
+      <svg width="11" height="11" viewBox="0 0 14 14" fill="rgba(255,255,255,0.35)">
+        <path d="M3.08 2.17c1.65-.12 4.16-.18 5.62-.16 1.58.02 2.08.44 2.14 1.95.08 1.68.08 4.22 0 5.9-.06 1.48-.52 1.91-2.03 1.96-1.61.06-4.15.06-5.79 0-1.43-.05-1.95-.5-2.02-1.86-.08-1.73-.09-4.36 0-6.08.07-1.34.59-1.6 2.08-1.71Zm.45 1.36v6.95h6.94V3.53H3.53Zm1.26 1.17h3.95v.91H6.99v3.09h-.98V5.61H4.79V4.7Z"/>
+      </svg>
+    )
+  }
   return (
     <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
       <rect x="1.5" y="1.5" width="8" height="8" rx="1.5" stroke="rgba(255,255,255,0.35)" strokeWidth="1.1"/>
