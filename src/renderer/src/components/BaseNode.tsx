@@ -32,9 +32,10 @@ interface Props {
   node: NodeData
   children?: React.ReactNode
   onContextMenu?: (e: React.MouseEvent) => void
+  titleExtra?: React.ReactNode
 }
 
-export function BaseNode({ node, children, onContextMenu }: Props): React.ReactElement {
+export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): React.ReactElement {
   const { update, bringToFront, remove, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const { setDraggingOverSidebar, add: addTemplate } = useTemplateStore()
   const focused = focusedNodeId === node.id
@@ -168,6 +169,8 @@ export function BaseNode({ node, children, onContextMenu }: Props): React.ReactE
         }}>
           {node.title}
         </span>
+
+        {titleExtra}
 
         {/* Minimize button */}
         <button

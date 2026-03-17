@@ -68,6 +68,10 @@ declare global {
       onShortcut: (cb: (name: string) => void) => () => void
     }
 
+    git: {
+      clone: (repoUrl: string, targetDir: string) => Promise<void>
+    }
+
     fs: {
       readDir: (dirPath: string) => Promise<Array<{
         name: string

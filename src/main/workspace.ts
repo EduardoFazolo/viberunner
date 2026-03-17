@@ -111,4 +111,22 @@ export function setupWorkspaceHandlers(): void {
     const { shell } = await import('electron')
     await shell.openPath(filePath)
   })
+
+  // -------------------------------------------------------------------------
+  // Git
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle('git:clone', (_e, repoUrl: string, targetDir: string) => {
+    return new Promise<void>((resolve, reject) => {
+      const { spawn } = require('child_process')
+      const proc = spawn('git', ['clone', repoUrl], { cwd: targetDir })
+      let stderr = ''
+      proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+      proc.on('close', (code: number) => {
+        if (code === 0) resolve()
+        else reject(new Error(stderr.trim() || `git clone exited with code ${code}`))
+      })
+      proc.on('error', reject)
+    })
+  })
 }

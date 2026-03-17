@@ -72,6 +72,11 @@ contextBridge.exposeInMainWorld('appState', {
     ipcRenderer.invoke('app:setState', key, value),
 })
 
+contextBridge.exposeInMainWorld('git', {
+  clone: (repoUrl: string, targetDir: string): Promise<void> =>
+    ipcRenderer.invoke('git:clone', repoUrl, targetDir),
+})
+
 contextBridge.exposeInMainWorld('fs', {
   readDir: (dirPath: string): Promise<FsEntry[]> =>
     ipcRenderer.invoke('fs:readDir', dirPath),
