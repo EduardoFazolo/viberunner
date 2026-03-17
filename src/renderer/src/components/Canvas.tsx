@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useCameraStore } from '../stores/cameraStore'
+import { useCameraStore, updateCursorPos } from '../stores/cameraStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { GridRenderer } from './GridRenderer'
@@ -21,12 +21,15 @@ export function Canvas(): React.ReactElement {
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const localX = e.clientX - rect.left
+      const localY = e.clientY - rect.top
       const style = useSettingsStore.getState().settings.navStyle
       if (style === 'trackpad') {
-        zoomAt(e.clientX, e.clientY, e.deltaY)
+        zoomAt(localX, localY, e.deltaY)
       } else {
         if (e.ctrlKey || e.metaKey) {
-          zoomAt(e.clientX, e.clientY, e.deltaY)
+          zoomAt(localX, localY, e.deltaY)
         } else {
           pan(-e.deltaX, -e.deltaY)
         }
@@ -53,6 +56,8 @@ export function Canvas(): React.ReactElement {
   }, [startPan])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
+    const rect = rootRef.current?.getBoundingClientRect()
+    if (rect) updateCursorPos(e.clientX - rect.left, e.clientY - rect.top)
     if (!isPanningRef.current) return
     pan(e.clientX - lastPos.current.x, e.clientY - lastPos.current.y)
     lastPos.current = { x: e.clientX, y: e.clientY }
