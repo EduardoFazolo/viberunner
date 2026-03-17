@@ -72,6 +72,14 @@ contextBridge.exposeInMainWorld('appState', {
     ipcRenderer.invoke('app:setState', key, value),
 })
 
+contextBridge.exposeInMainWorld('fs', {
+  readDir: (dirPath: string): Promise<FsEntry[]> =>
+    ipcRenderer.invoke('fs:readDir', dirPath),
+
+  openFile: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke('fs:openFile', filePath),
+})
+
 contextBridge.exposeInMainWorld('app', {
   onShortcut: (cb: (name: string) => void) => {
     const listener = (_: unknown, name: string) => cb(name)
@@ -106,6 +114,13 @@ export interface NodeRow {
   props: string
   createdAt: number
   updatedAt: number
+}
+
+export interface FsEntry {
+  name: string
+  isDir: boolean
+  size: number
+  modified: number
 }
 
 export interface CameraRow {

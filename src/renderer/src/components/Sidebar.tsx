@@ -52,6 +52,13 @@ function NodeTypeIcon({ type }: { type: string }): React.ReactElement {
       </svg>
     )
   }
+  if (type === 'files') {
+    return (
+      <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+        <path d="M1 1.5C1 1.22 1.22 1 1.5 1H4L5 2.5H10.5C10.78 2.5 11 2.72 11 3V8.5C11 8.78 10.78 9 10.5 9H1.5C1.22 9 1 8.78 1 8.5V1.5Z" stroke="rgba(255,255,255,0.35)" strokeWidth="1.1" fill="none"/>
+      </svg>
+    )
+  }
   return (
     <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
       <rect x="1.5" y="1.5" width="8" height="8" rx="1.5" stroke="rgba(255,255,255,0.35)" strokeWidth="1.1"/>

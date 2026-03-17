@@ -67,6 +67,16 @@ declare global {
     app: {
       onShortcut: (cb: (name: string) => void) => () => void
     }
+
+    fs: {
+      readDir: (dirPath: string) => Promise<Array<{
+        name: string
+        isDir: boolean
+        size: number
+        modified: number
+      }>>
+      openFile: (filePath: string) => Promise<void>
+    }
   }
 }
 

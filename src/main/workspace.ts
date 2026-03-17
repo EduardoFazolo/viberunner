@@ -1,5 +1,7 @@
 import { ipcMain, IpcMainEvent, dialog, BrowserWindow } from 'electron'
 import { homedir } from 'os'
+import * as fs from 'fs'
+import * as path from 'path'
 import {
   getWorkspaces, saveWorkspace, deleteWorkspace,
   getNodes, saveNodes, deleteNode,
@@ -73,4 +75,40 @@ export function setupWorkspaceHandlers(): void {
   ipcMain.handle('terminal:saveState', (_e, nodeId: string, serializedState: string) =>
     mergeNodeProps(nodeId, { serializedState })
   )
+
+  // -------------------------------------------------------------------------
+  // File system
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle('fs:readDir', async (_e, dirPath: string) => {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+    const results = await Promise.all(
+      entries.map(async (entry) => {
+        const fullPath = path.join(dirPath, entry.name)
+        let size = 0
+        let modified = 0
+        try {
+          const stat = await fs.promises.stat(fullPath)
+          size = stat.size
+          modified = stat.mtimeMs
+        } catch {}
+        return {
+          name: entry.name,
+          isDir: entry.isDirectory(),
+          size,
+          modified,
+        }
+      })
+    )
+    // Dirs first, then files, both alphabetical
+    return results.sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+  })
+
+  ipcMain.handle('fs:openFile', async (_e, filePath: string) => {
+    const { shell } = await import('electron')
+    await shell.openPath(filePath)
+  })
 }
