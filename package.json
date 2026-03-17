@@ -16,6 +16,7 @@
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
+    "@types/sharp": "^0.32.0",
     "@vitejs/plugin-react": "^4.0.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
@@ -25,6 +26,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",
+    "@tiptap/extension-image": "^3.20.4",
     "@tiptap/pm": "^3.20.4",
     "@tiptap/react": "^3.20.4",
     "@tiptap/starter-kit": "^3.20.4",
@@ -42,6 +44,7 @@
     "pixi.js": "^8.0.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.2.1",
     "zustand": "^5.0.0"
   },

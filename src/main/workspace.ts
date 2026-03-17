@@ -190,6 +190,108 @@ export function setupWorkspaceHandlers(): void {
     return `file://${filePath}`
   })
 
+  const NOTION_ORIGIN = 'https://www.notion.so'
+  const NOTION_UA =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+  const formatUuid = (id: string): string =>
+    id.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
+
+  const buildCookieHeader = async (ses: Electron.Session, url: string): Promise<string> => {
+    const cookies = await ses.cookies.get({ url })
+    return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ')
+  }
+
+  const isNotionAssetUrl = (value: string): boolean => {
+    if (value.startsWith('attachment:')) return true
+
+    try {
+      const url = new URL(value)
+      const host = url.hostname.toLowerCase()
+      const href = url.href.toLowerCase()
+      return (
+        host.endsWith('.notion.so') ||
+        host === 'notion.so' ||
+        host.endsWith('.notion-static.com') ||
+        host === 'notion-static.com' ||
+        href.includes('secure.notion-static.com')
+      )
+    } catch {
+      return false
+    }
+  }
+
+  ipcMain.handle('notion:fetchImage', async (_e, partition: string, imageUrl: string, blockId?: string) => {
+    const sharp = require('sharp')
+    const ses = session.fromPartition(partition)
+    const notionCookieHeader = await buildCookieHeader(ses, NOTION_ORIGIN)
+    const notionHeaders = {
+      'content-type': 'application/json',
+      'cookie': notionCookieHeader,
+      'origin': NOTION_ORIGIN,
+      'referer': `${NOTION_ORIGIN}/`,
+      'user-agent': NOTION_UA,
+    }
+
+    const resolveSignedFileUrl = async (sourceUrl: string): Promise<string> => {
+      if (!blockId) throw new Error('blockId required to resolve Notion file URLs')
+      const res = await ses.fetch(`${NOTION_ORIGIN}/api/v3/getSignedFileUrls`, {
+        method: 'POST',
+        headers: notionHeaders,
+        credentials: 'include',
+        body: JSON.stringify({
+          urls: [{ url: sourceUrl, permissionRecord: { table: 'block', id: formatUuid(blockId) } }],
+        }),
+      })
+      if (!res.ok) throw new Error(`getSignedFileUrls failed: ${res.status}`)
+      const data = await res.json()
+      const signedUrl = data.signedUrls?.[0]
+      if (!signedUrl) throw new Error('No signed URL returned')
+      return signedUrl
+    }
+
+    const fetchImageResponse = async (targetUrl: string): Promise<Response> => {
+      if (isNotionAssetUrl(targetUrl)) {
+        return ses.fetch(targetUrl, {
+          headers: {
+            'cookie': notionCookieHeader,
+            'referer': `${NOTION_ORIGIN}/`,
+            'user-agent': NOTION_UA,
+          },
+          credentials: 'include',
+        })
+      }
+      return fetch(targetUrl)
+    }
+
+    let resolvedUrl = imageUrl
+
+    if (imageUrl.startsWith('attachment:')) {
+      resolvedUrl = await resolveSignedFileUrl(imageUrl)
+    } else if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+      throw new Error(`Unsupported image scheme`)
+    }
+
+    let res = await fetchImageResponse(resolvedUrl)
+    if (res.status === 403 && blockId && isNotionAssetUrl(imageUrl) && !imageUrl.startsWith('attachment:')) {
+      resolvedUrl = await resolveSignedFileUrl(imageUrl)
+      res = await fetchImageResponse(resolvedUrl)
+    }
+    if (!res.ok) throw new Error(`Image fetch failed: ${res.status}`)
+
+    const buf = Buffer.from(await res.arrayBuffer())
+    try {
+      const out = await sharp(buf)
+        .resize({ width: 1200, withoutEnlargement: true })
+        .webp({ quality: 85 })
+        .toBuffer()
+      return `data:image/webp;base64,${out.toString('base64')}`
+    } catch {
+      const ct = (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0]
+      return `data:${ct};base64,${buf.toString('base64')}`
+    }
+  })
+
   ipcMain.handle('notion:fetchPage', async (_e, partition: string, pageId: string) => {
     const ses = session.fromPartition(partition)
     const cookies = await ses.cookies.get({ url: 'https://www.notion.so' })

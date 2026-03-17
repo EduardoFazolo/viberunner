@@ -1,3 +1,11 @@
+// Gray animated loading placeholder shown while a Notion image is being fetched
+export const IMAGE_LOADING_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="140">' +
+  '<rect width="600" height="140" rx="6" fill="#f3f3f3"/>' +
+  '<text x="300" y="75" font-family="system-ui,sans-serif" font-size="13" fill="#aaa" text-anchor="middle" dominant-baseline="middle">Loading image…</text>' +
+  '</svg>'
+)}`
+
 // Notion rich text segment: [text, [[decoration, value?], ...][]]
 type NotionText = [string, string[][]?]
 
@@ -22,7 +30,8 @@ function convertRichText(richText: NotionText[] | undefined): any[] {
 function notionBlockToTiptap(
   blockId: string,
   blocks: Record<string, { value: any }>,
-  visited = new Set<string>()
+  visited = new Set<string>(),
+  imageMap: Record<string, string> = {}
 ): any[] {
   if (visited.has(blockId)) return []
   visited.add(blockId)
@@ -33,13 +42,21 @@ function notionBlockToTiptap(
 
   const title: NotionText[] = block.properties?.title ?? []
   const children = (block.content ?? []).flatMap((id: string) =>
-    notionBlockToTiptap(id, blocks, visited)
+    notionBlockToTiptap(id, blocks, visited, imageMap)
   )
 
   switch (block.type) {
     case 'page':
-      // Skip the page block itself — just render children
+      // Skip the page block itself — children already include content
       return children
+
+    case 'image': {
+      const src: string | undefined = block.format?.display_source ?? block.properties?.source?.[0]?.[0]
+      if (!src) return children
+      // imageMap key is the raw src (including attachment: URLs); resolves to data URL when loaded
+      const resolvedSrc = imageMap[src] ?? IMAGE_LOADING_PLACEHOLDER
+      return [{ type: 'image', attrs: { src: resolvedSrc, alt: '', title: null } }, ...children]
+    }
 
     case 'text':
     case 'paragraph': {
@@ -99,22 +116,26 @@ function notionBlockToTiptap(
 
 export function notionChunkToTiptap(
   pageId: string,
-  blocks: Record<string, { value: any }>
+  blocks: Record<string, { value: any }>,
+  imageMap: Record<string, string> = {}
 ): object {
   const uuid = pageId.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')
 
-  // Find the page block — try both formats
   const pageBlock = blocks[uuid] ?? blocks[pageId]
   if (!pageBlock) return { type: 'doc', content: [{ type: 'paragraph', content: [] }] }
 
-  const content = notionBlockToTiptap(pageBlock.value.id ?? uuid, blocks, new Set())
+  // Title as H1 at the top of the note
+  const titleText: NotionText[] = pageBlock.value.properties?.title ?? []
+  const titleNode = titleText.length > 0
+    ? [{ type: 'heading', attrs: { level: 1 }, content: convertRichText(titleText) }]
+    : []
 
-  // Merge adjacent list items of the same type
+  const content = notionBlockToTiptap(pageBlock.value.id ?? uuid, blocks, new Set(), imageMap)
   const merged = mergeAdjacentLists(content)
 
   return {
     type: 'doc',
-    content: merged.length > 0 ? merged : [{ type: 'paragraph', content: [] }],
+    content: [...titleNode, ...(merged.length > 0 ? merged : [{ type: 'paragraph', content: [] }])],
   }
 }
 

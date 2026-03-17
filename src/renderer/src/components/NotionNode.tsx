@@ -4,7 +4,7 @@ import { NodeData, useNodeStore } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useCameraStore } from '../stores/cameraStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { notionChunkToTiptap } from '../utils/notionToTiptap'
+import { notionChunkToTiptap, IMAGE_LOADING_PLACEHOLDER } from '../utils/notionToTiptap'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -441,13 +441,37 @@ export function NotionNode({ node }: Props): React.ReactElement {
           try {
             const chunk = prefetchedChunk.current ?? await window.notion.fetchPage(partition, pageId)
             prefetchedChunk.current = null
-            const content = notionChunkToTiptap(pageId, chunk.recordMap.block)
-            const current = useNodeStore.getState().nodes.get(newNode.id)
-            if (current) {
+
+            // Step 1: set text content immediately — images show as loading placeholders
+            const imageMap: Record<string, string> = {}
+            const setContent = (map: Record<string, string>) => {
+              const current = useNodeStore.getState().nodes.get(newNode.id)
+              if (!current) return
               useNodeStore.getState().update(newNode.id, {
-                props: { ...current.props, content },
+                props: { ...current.props, content: notionChunkToTiptap(pageId, chunk.recordMap.block, map) },
               })
             }
+            setContent(imageMap)
+
+            // Step 2: fetch each image independently — replace placeholder as each one arrives
+            // Extract image blocks with their IDs (needed to resolve attachment: URLs)
+            const imageBlocks = Object.values(chunk.recordMap.block)
+              .filter((b: any) => b.value.type === 'image')
+              .map((b: any) => ({
+                blockId: b.value.id as string,
+                src: (b.value.format?.display_source ?? b.value.properties?.source?.[0]?.[0]) as string,
+              }))
+              .filter((item): item is { blockId: string; src: string } => typeof item.src === 'string')
+
+            await Promise.all(imageBlocks.map(async ({ blockId, src }) => {
+              try {
+                const dataUrl = await window.notion.fetchImage(partition, src, blockId)
+                imageMap[src] = dataUrl
+                setContent({ ...imageMap })
+              } catch (err) {
+                console.error('[NotionNode] fetchImage failed for', src, err)
+              }
+            }))
           } catch (err) {
             console.error('Failed to fetch Notion page:', err)
           }

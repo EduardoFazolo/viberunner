@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Image from '@tiptap/extension-image'
 import { NodeData, useNodeStore } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import {
@@ -238,6 +239,7 @@ export function NoteNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack } = useNodeStore()
   const [showToolbar, setShowToolbar] = useState((node.props.showToolbar as boolean) ?? true)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const externalUpdateRef = useRef(false)
 
   const toolbarVisible = showToolbar
   const contentH = node.height - TITLE_H - (toolbarVisible ? TOOLBAR_H : 0)
@@ -252,7 +254,7 @@ export function NoteNode({ node }: Props): React.ReactElement {
   }, [node.id, update])
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, Image.configure({ inline: false, allowBase64: true })],
     content: (node.props.content as object | string | undefined) ?? '<p></p>',
     editorProps: {
       attributes: {
@@ -260,6 +262,8 @@ export function NoteNode({ node }: Props): React.ReactElement {
       },
     },
     onUpdate: ({ editor }) => {
+      // Skip saving if the change was injected externally (async drop fill)
+      if (externalUpdateRef.current) return
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => {
         const currentProps = useNodeStore.getState().nodes.get(node.id)?.props ?? {}
@@ -267,6 +271,20 @@ export function NoteNode({ node }: Props): React.ReactElement {
       }, 500)
     },
   })
+
+  // When content is updated externally (e.g. async Notion fetch fills in after drop),
+  // push it into the live editor without triggering the save debounce.
+  const propsContent = node.props.content
+  useEffect(() => {
+    if (!editor || !propsContent) return
+    const editorJson = JSON.stringify(editor.getJSON())
+    const propsJson = JSON.stringify(propsContent)
+    if (editorJson !== propsJson) {
+      externalUpdateRef.current = true
+      editor.commands.setContent(propsContent as any, false)
+      externalUpdateRef.current = false
+    }
+  }, [editor, propsContent])
 
   // Cleanup timer on unmount
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])

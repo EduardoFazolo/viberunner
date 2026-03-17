@@ -117,6 +117,8 @@ contextBridge.exposeInMainWorld('app', {
 contextBridge.exposeInMainWorld('notion', {
   fetchPage: (partition: string, pageId: string): Promise<NotionPageChunk> =>
     ipcRenderer.invoke('notion:fetchPage', partition, pageId),
+  fetchImage: (partition: string, imageUrl: string, blockId?: string): Promise<string> =>
+    ipcRenderer.invoke('notion:fetchImage', partition, imageUrl, blockId),
 })
 
 // ---------------------------------------------------------------------------

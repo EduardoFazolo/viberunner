@@ -77,6 +77,7 @@ declare global {
     }
 
     notion: {
+      fetchImage: (partition: string, imageUrl: string, blockId?: string) => Promise<string>
       fetchPage: (partition: string, pageId: string) => Promise<{
         recordMap: {
           block: Record<string, { value: {
