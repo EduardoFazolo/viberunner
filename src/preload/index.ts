@@ -72,6 +72,17 @@ contextBridge.exposeInMainWorld('appState', {
     ipcRenderer.invoke('app:setState', key, value),
 })
 
+contextBridge.exposeInMainWorld('sessions', {
+  getAll: (): Promise<BrowserSessionRow[]> =>
+    ipcRenderer.invoke('sessions:getAll'),
+
+  save: (s: BrowserSessionRow): Promise<void> =>
+    ipcRenderer.invoke('sessions:save', s),
+
+  delete: (id: string): Promise<void> =>
+    ipcRenderer.invoke('sessions:delete', id),
+})
+
 contextBridge.exposeInMainWorld('git', {
   clone: (repoUrl: string, targetDir: string): Promise<void> =>
     ipcRenderer.invoke('git:clone', repoUrl, targetDir),
@@ -136,4 +147,10 @@ export interface CameraRow {
   x: number
   y: number
   zoom: number
+}
+
+export interface BrowserSessionRow {
+  id: string
+  name: string
+  createdAt: number
 }

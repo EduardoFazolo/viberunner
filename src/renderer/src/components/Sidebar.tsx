@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useWorkspaceStore, Workspace, NodeSummary } from '../stores/workspaceStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { useTemplateStore, NodeTemplate } from '../stores/templateStore'
+import { useSessionStore, BrowserSession } from '../stores/sessionStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { loadWorkspaceCanvas } from '../hooks/useWorkspaceInit'
 import { getCanvasRect } from '../utils/canvasUtils'
@@ -494,6 +495,9 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
           )}
         </div>
 
+        {/* Sessions */}
+        <SessionsSection />
+
         {/* Library */}
         {(templates.length > 0 || draggingOverSidebar) && (
           <div style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
@@ -602,6 +606,199 @@ function TemplateItem({ template, onDragStart, onRemove }: {
             <path d="M1 1l6 6M7 1l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
           </svg>
         </button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Sessions section
+// ---------------------------------------------------------------------------
+
+function SessionItem({ session, onRemove }: {
+  session: BrowserSession
+  onRemove: () => void
+}): React.ReactElement {
+  const [hovered, setHovered] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [nameVal, setNameVal] = useState(session.name)
+  const { rename } = useSessionStore()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { if (renaming && inputRef.current) inputRef.current.select() }, [renaming])
+
+  const commitRename = async () => {
+    const trimmed = nameVal.trim()
+    if (trimmed && trimmed !== session.name) await rename(session.id, trimmed)
+    setRenaming(false)
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        height: 26, padding: '0 8px 0 12px',
+        cursor: renaming ? 'default' : 'grab',
+        background: hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
+        borderRadius: 5, margin: '0 4px',
+      }}
+      draggable={!renaming}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/canvaflow-session', JSON.stringify({ id: session.id }))
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onDoubleClick={() => { setRenaming(true); setNameVal(session.name) }}
+    >
+      {/* Profile icon */}
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
+        <circle cx="5" cy="3.5" r="2" stroke="rgba(167,139,250,0.7)" strokeWidth="1.1"/>
+        <path d="M1.5 9c0-1.93 1.57-3.5 3.5-3.5S8.5 7.07 8.5 9" stroke="rgba(167,139,250,0.7)" strokeWidth="1.1" strokeLinecap="round"/>
+      </svg>
+
+      {renaming ? (
+        <input
+          ref={inputRef}
+          value={nameVal}
+          onChange={(e) => setNameVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename()
+            if (e.key === 'Escape') setRenaming(false)
+          }}
+          onBlur={commitRename}
+          style={{
+            flex: 1, height: 18, borderRadius: 3,
+            border: '1px solid rgba(167,139,250,0.4)',
+            background: 'rgba(255,255,255,0.06)',
+            color: 'rgba(255,255,255,0.8)', fontSize: 11,
+            padding: '0 5px', outline: 'none', fontFamily: 'inherit',
+          }}
+        />
+      ) : (
+        <span style={{
+          flex: 1, fontSize: 11.5,
+          color: hovered ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {session.name}
+        </span>
+      )}
+
+      {hovered && !renaming && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onRemove}
+          title="Delete session"
+          style={{
+            width: 14, height: 14, border: 'none', background: 'transparent',
+            color: 'rgba(255,255,255,0.25)', cursor: 'pointer', padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}
+        >
+          <svg width="8" height="8" viewBox="0 0 8 8">
+            <path d="M1 1l6 6M7 1l-6 6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
+function SessionsSection(): React.ReactElement {
+  const { sessions, loaded, load, add, remove } = useSessionStore()
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { if (!loaded) load() }, [loaded, load])
+  useEffect(() => { if (creating && inputRef.current) inputRef.current.focus() }, [creating])
+
+  const handleCreate = async () => {
+    const name = newName.trim()
+    if (!name) { setCreating(false); return }
+    await add(name)
+    setNewName('')
+    setCreating(false)
+  }
+
+  if (!loaded) return <></>
+
+  return (
+    <div style={{ flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        padding: '7px 8px 4px 12px',
+      }}>
+        <span style={{
+          flex: 1, fontSize: 10.5, fontWeight: 600,
+          color: 'rgba(255,255,255,0.25)',
+          letterSpacing: '0.08em', textTransform: 'uppercase',
+        }}>
+          Sessions
+        </span>
+        <button
+          onClick={() => setCreating(true)}
+          title="New session"
+          style={{
+            width: 20, height: 20, borderRadius: 4, border: 'none',
+            background: 'transparent', color: 'rgba(255,255,255,0.3)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 0,
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.6)' }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)' }}
+        >
+          <PlusIcon />
+        </button>
+      </div>
+
+      {creating && (
+        <div style={{ padding: '2px 8px 6px', display: 'flex', gap: 5 }}>
+          <input
+            ref={inputRef}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreate()
+              if (e.key === 'Escape') { setCreating(false); setNewName('') }
+            }}
+            onBlur={() => { if (!newName.trim()) setCreating(false) }}
+            placeholder="Session name…"
+            style={{
+              flex: 1, height: 24, borderRadius: 4,
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)',
+              color: 'rgba(255,255,255,0.75)', fontSize: 11,
+              padding: '0 7px', outline: 'none', fontFamily: 'inherit',
+            }}
+          />
+          <button
+            onClick={handleCreate}
+            style={{
+              height: 24, padding: '0 8px', borderRadius: 4,
+              border: 'none', background: '#a78bfa', color: '#fff',
+              fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            Add
+          </button>
+        </div>
+      )}
+
+      {sessions.length === 0 && !creating ? (
+        <div style={{
+          padding: '2px 12px 8px 28px',
+          fontSize: 11, color: 'rgba(255,255,255,0.2)', fontStyle: 'italic',
+        }}>
+          No saved sessions
+        </div>
+      ) : (
+        <div style={{ paddingBottom: 4 }}>
+          {sessions.map((s) => (
+            <SessionItem key={s.id} session={s} onRemove={() => remove(s.id)} />
+          ))}
+        </div>
       )}
     </div>
   )

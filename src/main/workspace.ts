@@ -8,7 +8,8 @@ import {
   getCamera, saveCamera,
   getAppState, setAppState,
   mergeNodeProps,
-  WorkspaceRow, NodeRow, CameraRow,
+  getBrowserSessions, saveBrowserSession, deleteBrowserSession,
+  WorkspaceRow, NodeRow, CameraRow, BrowserSessionRow,
 } from './database'
 
 export function setupWorkspaceHandlers(): void {
@@ -75,6 +76,16 @@ export function setupWorkspaceHandlers(): void {
   ipcMain.handle('terminal:saveState', (_e, nodeId: string, serializedState: string) =>
     mergeNodeProps(nodeId, { serializedState })
   )
+
+  // -------------------------------------------------------------------------
+  // Browser sessions
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle('sessions:getAll', () => getBrowserSessions())
+
+  ipcMain.handle('sessions:save', (_e, s: BrowserSessionRow) => saveBrowserSession(s))
+
+  ipcMain.handle('sessions:delete', (_e, id: string) => deleteBrowserSession(id))
 
   // -------------------------------------------------------------------------
   // File system

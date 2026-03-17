@@ -1,5 +1,11 @@
 // Global window API types exposed via contextBridge
 
+interface BrowserSessionRow {
+  id: string
+  name: string
+  createdAt: number
+}
+
 interface WorkspaceRow {
   id: string
   name: string
@@ -66,6 +72,12 @@ declare global {
 
     app: {
       onShortcut: (cb: (name: string) => void) => () => void
+    }
+
+    sessions: {
+      getAll: () => Promise<BrowserSessionRow[]>
+      save: (s: BrowserSessionRow) => Promise<void>
+      delete: (id: string) => Promise<void>
     }
 
     git: {

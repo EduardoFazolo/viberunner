@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { NodeData, useNodeStore } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useCameraStore } from '../stores/cameraStore'
+import { useSessionStore } from '../stores/sessionStore'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -24,6 +25,228 @@ declare global {
 
 const TITLE_H = 32
 const TOOLBAR_H = 36
+
+function getPartition(sessionId: string | undefined, nodeId: string): string {
+  if (!sessionId || sessionId === 'default') return 'persist:canvaflow-ws-default'
+  if (sessionId === 'private') return `canvaflow-private-${nodeId}`
+  return `persist:canvaflow-session-${sessionId}`
+}
+
+// ---------------------------------------------------------------------------
+// SessionPicker
+// ---------------------------------------------------------------------------
+
+interface SessionPickerProps {
+  sessionId: string | undefined
+  nodeId: string
+  onChange: (sessionId: string) => void
+}
+
+function SessionPicker({ sessionId, nodeId, onChange }: SessionPickerProps): React.ReactElement {
+  const { sessions, loaded, load, add } = useSessionStore()
+  const [open, setOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { if (!loaded) load() }, [loaded, load])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setCreating(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  useEffect(() => {
+    if (creating && inputRef.current) inputRef.current.focus()
+  }, [creating])
+
+  const currentLabel = !sessionId || sessionId === 'default'
+    ? 'Default'
+    : sessionId === 'private'
+      ? 'Private'
+      : sessions.find((s) => s.id === sessionId)?.name ?? 'Unknown'
+
+  const handleCreate = async () => {
+    const name = newName.trim()
+    if (!name) return
+    const session = await add(name)
+    onChange(session.id)
+    setNewName('')
+    setCreating(false)
+    setOpen(false)
+  }
+
+  const isPrivate = sessionId === 'private'
+  const isDefault = !sessionId || sessionId === 'default'
+
+  return (
+    <div ref={pickerRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => setOpen((o) => !o)}
+        title="Browser session"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          height: 22, padding: '0 7px',
+          borderRadius: 4, border: '1px solid rgba(255,255,255,0.08)',
+          background: open ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
+          color: isPrivate ? 'rgba(251,191,36,0.8)' : 'rgba(255,255,255,0.4)',
+          fontSize: 10, fontWeight: 500, cursor: 'pointer',
+          letterSpacing: '0.02em', whiteSpace: 'nowrap',
+        }}
+      >
+        {isPrivate ? (
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+            <path d="M5 1a2 2 0 0 1 2 2v1H3V3a2 2 0 0 1 2-2zM2 4h6a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="currentColor"/>
+          </svg>
+        ) : (
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+            <circle cx="5" cy="3.5" r="2" stroke="currentColor" strokeWidth="1.1"/>
+            <path d="M1.5 9c0-1.93 1.57-3.5 3.5-3.5S8.5 7.07 8.5 9" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
+          </svg>
+        )}
+        {currentLabel}
+      </button>
+
+      {open && (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: 26, right: 0,
+            minWidth: 160, zIndex: 99999,
+            background: '#1e1e1e',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 6,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Built-in options */}
+          {(['default', 'private'] as const).map((opt) => (
+            <div
+              key={opt}
+              onClick={() => { onChange(opt); setOpen(false) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 10px', fontSize: 12, cursor: 'pointer',
+                color: (opt === 'default' ? isDefault : opt === sessionId)
+                  ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.55)',
+                background: (opt === 'default' ? isDefault : opt === sessionId)
+                  ? 'rgba(167,139,250,0.12)' : 'transparent',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)' }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background =
+                  (opt === 'default' ? isDefault : opt === sessionId) ? 'rgba(167,139,250,0.12)' : 'transparent'
+              }}
+            >
+              {opt === 'private' ? (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M5 1a2 2 0 0 1 2 2v1H3V3a2 2 0 0 1 2-2zM2 4h6a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="rgba(251,191,36,0.7)"/>
+                </svg>
+              ) : (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <circle cx="5" cy="3.5" r="2" stroke="rgba(255,255,255,0.4)" strokeWidth="1.1"/>
+                  <path d="M1.5 9c0-1.93 1.57-3.5 3.5-3.5S8.5 7.07 8.5 9" stroke="rgba(255,255,255,0.4)" strokeWidth="1.1" strokeLinecap="round"/>
+                </svg>
+              )}
+              <span>{opt === 'default' ? 'Default (shared)' : 'Private'}</span>
+              {opt === 'private' && (
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginLeft: 'auto' }}>incognito</span>
+              )}
+            </div>
+          ))}
+
+          {/* Named sessions */}
+          {sessions.length > 0 && (
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', margin: '2px 0' }} />
+          )}
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              onClick={() => { onChange(s.id); setOpen(false) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 10px', fontSize: 12, cursor: 'pointer',
+                color: sessionId === s.id ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.55)',
+                background: sessionId === s.id ? 'rgba(167,139,250,0.12)' : 'transparent',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)' }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background =
+                  sessionId === s.id ? 'rgba(167,139,250,0.12)' : 'transparent'
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <circle cx="5" cy="3.5" r="2" stroke="rgba(167,139,250,0.7)" strokeWidth="1.1"/>
+                <path d="M1.5 9c0-1.93 1.57-3.5 3.5-3.5S8.5 7.07 8.5 9" stroke="rgba(167,139,250,0.7)" strokeWidth="1.1" strokeLinecap="round"/>
+              </svg>
+              {s.name}
+            </div>
+          ))}
+
+          {/* New session */}
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', margin: '2px 0' }} />
+          {creating ? (
+            <div style={{ padding: '6px 8px', display: 'flex', gap: 6 }}>
+              <input
+                ref={inputRef}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreate()
+                  if (e.key === 'Escape') { setCreating(false); setNewName('') }
+                }}
+                placeholder="Session name…"
+                style={{
+                  flex: 1, height: 24, borderRadius: 4,
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: 'rgba(255,255,255,0.8)', fontSize: 11,
+                  padding: '0 7px', outline: 'none', fontFamily: 'inherit',
+                }}
+              />
+              <button
+                onClick={handleCreate}
+                style={{
+                  height: 24, padding: '0 8px', borderRadius: 4,
+                  border: 'none', background: '#a78bfa', color: '#fff',
+                  fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                Save
+              </button>
+            </div>
+          ) : (
+            <div
+              onClick={() => setCreating(true)}
+              style={{
+                padding: '7px 10px', fontSize: 12, cursor: 'pointer',
+                color: 'rgba(255,255,255,0.4)',
+                display: 'flex', alignItems: 'center', gap: 7,
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.7)' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.4)' }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              </svg>
+              New session…
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function parseGitHubRepo(url: string): { owner: string; repo: string; cloneUrl: string } | null {
   try {
@@ -69,6 +292,12 @@ export function BrowserNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack, add, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const webviewRef = useRef<any>(null)
   const webviewAreaRef = useRef<HTMLDivElement>(null)
+
+  const sessionId = node.props.sessionId as string | undefined
+  const partition = getPartition(sessionId, node.id)
+
+  // Tracks the current URL for use when the webview remounts (e.g. session change)
+  const webviewSrcRef = useRef<string>((node.props.url as string) || 'https://google.com')
 
   // Frozen on mount — changing this ref never re-navigates the webview
   const initialUrl = useRef<string>((node.props.url as string) || 'https://google.com')
@@ -133,6 +362,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
           const url = (wv as any).getURL()
           if (url) {
             setUrlBar(url)
+            webviewSrcRef.current = url
             update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url } })
           }
         } catch {
@@ -144,6 +374,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
     const onNavigate = (e: any) => {
       if (e.url) {
         setUrlBar(e.url)
+        webviewSrcRef.current = e.url
         update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url: e.url } })
       }
     }
@@ -151,6 +382,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
     const onNavigateInPage = (e: any) => {
       if (e.url) {
         setUrlBar(e.url)
+        webviewSrcRef.current = e.url
         update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url: e.url } })
       }
     }
@@ -185,7 +417,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('did-fail-load', onFailLoad)
       wv.removeEventListener('new-window', onNewWindow)
     }
-  }, [node.id, node.x, node.y, update, add])
+  }, [node.id, node.x, node.y, partition, update, add])
 
 
   const handleBack = useCallback(() => {
@@ -231,6 +463,11 @@ export function BrowserNode({ node }: Props): React.ReactElement {
     },
     []
   )
+
+  const handleSessionChange = useCallback((newSessionId: string) => {
+    const currentProps = useNodeStore.getState().nodes.get(node.id)?.props ?? {}
+    update(node.id, { props: { ...currentProps, sessionId: newSessionId } })
+  }, [node.id, update])
 
   const webviewHeight = node.height - TITLE_H - TOOLBAR_H
 
@@ -393,6 +630,13 @@ export function BrowserNode({ node }: Props): React.ReactElement {
               }}
             />
 
+            {/* Session picker */}
+            <SessionPicker
+              sessionId={sessionId}
+              nodeId={node.id}
+              onChange={handleSessionChange}
+            />
+
           </div>
 
           {/* Webview area — webview stays mounted always to preserve page state */}
@@ -400,11 +644,28 @@ export function BrowserNode({ node }: Props): React.ReactElement {
             ref={webviewAreaRef}
             style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: '#ffffff' }}
             onPointerDown={(e) => e.stopPropagation()}
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes('application/canvaflow-session')) {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+              }
+            }}
+            onDrop={(e) => {
+              const raw = e.dataTransfer.getData('application/canvaflow-session')
+              if (raw) {
+                e.preventDefault()
+                try {
+                  const { id } = JSON.parse(raw)
+                  handleSessionChange(id)
+                } catch {}
+              }
+            }}
           >
             <webview
+              key={partition}
               ref={webviewRef}
-              src={initialUrl.current}
-              partition="persist:canvaflow-ws-default"
+              src={webviewSrcRef.current}
+              partition={partition}
               allowpopups=""
               style={{ width: '100%', height: '100%', display: 'flex' }}
             />

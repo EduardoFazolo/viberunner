@@ -38,6 +38,12 @@ export interface CameraRow {
   zoom: number
 }
 
+export interface BrowserSessionRow {
+  id: string
+  name: string
+  createdAt: number
+}
+
 // ---------------------------------------------------------------------------
 // DB instance
 // ---------------------------------------------------------------------------
@@ -104,6 +110,12 @@ function migrate(): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_canvas_nodes_workspace ON canvas_nodes(workspaceId);
+
+    CREATE TABLE IF NOT EXISTS browser_sessions (
+      id        TEXT PRIMARY KEY,
+      name      TEXT NOT NULL,
+      createdAt INTEGER NOT NULL
+    );
   `)
 }
 
@@ -179,6 +191,25 @@ export function mergeNodeProps(nodeId: string, patch: Record<string, unknown>): 
   const merged = JSON.stringify({ ...current, ...patch })
   db.prepare('UPDATE canvas_nodes SET props = ?, updatedAt = ? WHERE id = ?')
     .run(merged, Date.now(), nodeId)
+}
+
+// ---------------------------------------------------------------------------
+// Browser session queries
+// ---------------------------------------------------------------------------
+
+export function getBrowserSessions(): BrowserSessionRow[] {
+  return db.prepare('SELECT * FROM browser_sessions ORDER BY createdAt ASC').all() as BrowserSessionRow[]
+}
+
+export function saveBrowserSession(s: BrowserSessionRow): void {
+  db.prepare(`
+    INSERT INTO browser_sessions (id, name, createdAt) VALUES (@id, @name, @createdAt)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name
+  `).run(s)
+}
+
+export function deleteBrowserSession(id: string): void {
+  db.prepare('DELETE FROM browser_sessions WHERE id = ?').run(id)
 }
 
 export function getAllNodeIds(): string[] {
