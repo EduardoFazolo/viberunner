@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld('notion', {
     ipcRenderer.invoke('notion:fetchPage', partition, pageId),
   fetchImage: (partition: string, imageUrl: string, blockId?: string): Promise<string> =>
     ipcRenderer.invoke('notion:fetchImage', partition, imageUrl, blockId),
+  prepareExternalDrag: (partition: string, pageId: string, title: string, pageUrl?: string): Promise<NotionExternalDragExport> =>
+    ipcRenderer.invoke('notion:prepareExternalDrag', partition, pageId, title, pageUrl),
 })
 
 // ---------------------------------------------------------------------------
@@ -184,3 +186,14 @@ export interface NotionBlock {
 }
 
 export type NotionRichText = string | string[][]
+
+export interface NotionExternalDragExport {
+  title: string
+  text: string
+  html: string
+  markdown: string
+  filename: string
+  filePath: string
+  fileUrl: string
+  pageUrl: string
+}
