@@ -112,6 +112,10 @@ export function setupWorkspaceHandlers(): void {
     await shell.openPath(filePath)
   })
 
+  ipcMain.handle('fs:delete', async (_e, filePath: string) => {
+    await fs.promises.rm(filePath, { recursive: true, force: true })
+  })
+
   // -------------------------------------------------------------------------
   // Git
   // -------------------------------------------------------------------------

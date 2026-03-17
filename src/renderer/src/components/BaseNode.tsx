@@ -120,7 +120,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): 
         overflow: node.minimized ? 'visible' : 'hidden',
         transition: 'box-shadow 0.15s',
       }}
-      onPointerDown={() => { bringToFront(node.id); setFocusedNodeId(node.id) }}
+      onPointerDown={(e) => { bringToFront(node.id); setFocusedNodeId(node.id); e.stopPropagation() }}
       onContextMenu={onContextMenu}
     >
       {/* Title bar */}

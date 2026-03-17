@@ -18,7 +18,11 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
 
     const pty = await import('node-pty')
     const defaultShell = shell || process.env.SHELL || '/bin/zsh'
-    const defaultCwd = cwd || os.homedir()
+    // Expand ~ since node's spawn doesn't handle shell path expansion
+    const rawCwd = cwd?.startsWith('~/') ? os.homedir() + cwd.slice(1)
+                 : cwd === '~'           ? os.homedir()
+                 : cwd || ''
+    const defaultCwd = rawCwd || os.homedir()
 
     // Always run the shell directly — xterm.js owns scrollback natively.
     // tmux is used only to keep the background session alive for cwd/process persistence.
@@ -26,13 +30,19 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
     // Strip TERM_SESSION_ID so zsh doesn't share/corrupt macOS shell session files
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { TERM_SESSION_ID: _sid, ...baseEnv } = process.env
-    const ptyProcess = pty.spawn(defaultShell, [], {
+    const spawnOpts = {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
-      cwd: defaultCwd,
       env: { ...baseEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
-    })
+    }
+    let ptyProcess: Awaited<ReturnType<typeof pty.spawn>>
+    try {
+      ptyProcess = pty.spawn(defaultShell, [], { ...spawnOpts, cwd: defaultCwd })
+    } catch {
+      // cwd no longer exists — fall back to home directory
+      ptyProcess = pty.spawn(defaultShell, [], { ...spawnOpts, cwd: os.homedir() })
+    }
 
     ptyProcess.onData((data: string) => {
       try {

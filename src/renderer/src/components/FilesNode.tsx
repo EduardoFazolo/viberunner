@@ -41,67 +41,72 @@ function fileColor(name: string, isDir: boolean): string {
 function FolderIconLarge({ color }: { color: string }): React.ReactElement {
   return (
     <svg width="36" height="30" viewBox="0 0 36 30" fill="none">
-      <path
-        d="M2 5C2 3.34 3.34 2 5 2H12L15 6H31C32.66 6 34 7.34 34 9V25C34 26.66 32.66 28 31 28H5C3.34 28 2 26.66 2 25V5Z"
-        fill={color} opacity="0.8"
-      />
-      <path
-        d="M2 10H34" stroke="rgba(255,255,255,0.08)" strokeWidth="1"
-      />
+      <path d="M2 5C2 3.34 3.34 2 5 2H12L15 6H31C32.66 6 34 7.34 34 9V25C34 26.66 32.66 28 31 28H5C3.34 28 2 26.66 2 25V5Z" fill={color} opacity="0.8"/>
     </svg>
   )
 }
-
 function FolderIconSmall({ color }: { color: string }): React.ReactElement {
   return (
     <svg width="16" height="14" viewBox="0 0 16 14" fill="none" style={{ flexShrink: 0 }}>
-      <path
-        d="M1 2.5C1 1.67 1.67 1 2.5 1H5.5L7 3H13.5C14.33 3 15 3.67 15 4.5V11.5C15 12.33 14.33 13 13.5 13H2.5C1.67 13 1 12.33 1 11.5V2.5Z"
-        fill={color} opacity="0.85"
-      />
+      <path d="M1 2.5C1 1.67 1.67 1 2.5 1H5.5L7 3H13.5C14.33 3 15 3.67 15 4.5V11.5C15 12.33 14.33 13 13.5 13H2.5C1.67 13 1 12.33 1 11.5V2.5Z" fill={color} opacity="0.85"/>
     </svg>
   )
 }
-
 function FileIconSmall({ color }: { color: string }): React.ReactElement {
   return (
     <svg width="13" height="16" viewBox="0 0 13 16" fill="none" style={{ flexShrink: 0 }}>
-      <path
-        d="M2 1H8L12 5V14C12 14.55 11.55 15 11 15H2C1.45 15 1 14.55 1 14V2C1 1.45 1.45 1 2 1Z"
-        fill={color} opacity="0.6" stroke={color} strokeWidth="0.5"
-      />
+      <path d="M2 1H8L12 5V14C12 14.55 11.55 15 11 15H2C1.45 15 1 14.55 1 14V2C1 1.45 1.45 1 2 1Z" fill={color} opacity="0.6" stroke={color} strokeWidth="0.5"/>
       <path d="M8 1V5H12" fill="rgba(0,0,0,0.2)" stroke={color} strokeWidth="0.5" opacity="0.6"/>
     </svg>
   )
 }
-
 function FileIconLarge({ color }: { color: string }): React.ReactElement {
   return (
     <svg width="28" height="34" viewBox="0 0 28 34" fill="none">
-      <path
-        d="M3 1H18L27 10V32C27 32.55 26.55 33 26 33H3C2.45 33 2 32.55 2 32V2C2 1.45 2.45 1 3 1Z"
-        fill={color} opacity="0.5" stroke={color} strokeWidth="1"
-      />
+      <path d="M3 1H18L27 10V32C27 32.55 26.55 33 26 33H3C2.45 33 2 32.55 2 32V2C2 1.45 2.45 1 3 1Z" fill={color} opacity="0.5" stroke={color} strokeWidth="1"/>
       <path d="M18 1V10H27" fill="rgba(0,0,0,0.2)" stroke={color} strokeWidth="1" opacity="0.5"/>
     </svg>
   )
 }
 
+// Read persisted history from props (stored as JSON string)
+function readSavedHistory(props: Record<string, unknown>): string[] {
+  try {
+    const h = JSON.parse(props.history as string)
+    if (Array.isArray(h) && h.length > 0) return h
+  } catch {}
+  const p = props.path as string
+  return p ? [p] : []
+}
+
 export function FilesNode({ node }: Props): React.ReactElement {
   const { update } = useNodeStore()
 
-  const [currentPath, setCurrentPath] = useState<string>((node.props.path as string) || '')
-  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const savedHistory = readSavedHistory(node.props)
+  const [currentPath, setCurrentPath] = useState<string>(savedHistory[savedHistory.length - 1] || '')
+  const [viewMode, setViewModeState] = useState<ViewMode>((node.props.viewMode as ViewMode) || 'list')
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
-  const [history, setHistory] = useState<string[]>([])
-  const historyRef = useRef<string[]>([])
+  const [history, setHistory] = useState<string[]>(savedHistory)
+  const historyRef = useRef<string[]>(savedHistory)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const letterJump = useRef<{ letter: string; idx: number }>({ letter: '', idx: -1 })
   const [repoDragOver, setRepoDragOver] = useState(false)
-  const [cloning, setCloning] = useState<string | null>(null) // repo name being cloned
+  const [cloning, setCloning] = useState<string | null>(null)
   const [cloneError, setCloneError] = useState<string | null>(null)
+
+  // Persist props without overwriting other keys
+  const persistProps = useCallback((patch: Record<string, unknown>) => {
+    const currentProps = useNodeStore.getState().nodes.get(node.id)?.props ?? {}
+    update(node.id, { props: { ...currentProps, ...patch } })
+  }, [node.id, update])
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode)
+    persistProps({ viewMode: mode })
+  }, [persistProps])
 
   const loadDir = useCallback(async (dirPath: string, pushHistory: boolean) => {
     if (!dirPath) return
@@ -112,18 +117,27 @@ export function FilesNode({ node }: Props): React.ReactElement {
       const result = await window.fs.readDir(dirPath)
       setEntries(result)
       setCurrentPath(dirPath)
+      letterJump.current = { letter: '', idx: -1 }
+      let newHistory = historyRef.current
       if (pushHistory) {
-        historyRef.current = [...historyRef.current, dirPath]
-        setHistory([...historyRef.current])
+        newHistory = [...historyRef.current, dirPath]
+        historyRef.current = newHistory
+        setHistory(newHistory)
       }
-      update(node.id, { title: dirPath.split('/').pop() || dirPath, props: { path: dirPath } })
+      persistProps({
+        path: dirPath,
+        history: JSON.stringify(newHistory),
+        title: dirPath.split('/').pop() || dirPath,
+      })
+      update(node.id, { title: dirPath.split('/').pop() || dirPath })
     } catch (e: any) {
       setError(e?.message ?? 'Failed to read directory')
     } finally {
       setLoading(false)
     }
-  }, [node.id, update])
+  }, [node.id, update, persistProps])
 
+  // Stop wheel events from reaching the canvas native listener
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -132,12 +146,11 @@ export function FilesNode({ node }: Props): React.ReactElement {
     return () => el.removeEventListener('wheel', stop)
   }, [])
 
+  // Initial load
   useEffect(() => {
-    const savedPath = (node.props.path as string) || ''
-    if (savedPath) {
-      historyRef.current = [savedPath]
-      setHistory([savedPath])
-      loadDir(savedPath, false)
+    const path = historyRef.current[historyRef.current.length - 1]
+    if (path) {
+      loadDir(path, false)
     } else {
       window.workspace.homedir().then((home) => {
         historyRef.current = [home]
@@ -164,6 +177,43 @@ export function FilesNode({ node }: Props): React.ReactElement {
       window.fs.openFile(curPath.replace(/\/$/, '') + '/' + entry.name)
     }
   }, [loadDir])
+
+  const deleteSelected = useCallback(async (name: string, curPath: string) => {
+    const fullPath = curPath.replace(/\/$/, '') + '/' + name
+    try {
+      await window.fs.delete(fullPath)
+      setSelected(null)
+      await loadDir(curPath, false)
+    } catch (e: any) {
+      setCloneError(e?.message ?? 'Delete failed')
+    }
+  }, [loadDir])
+
+  // Keyboard: letter-jump (cycles through matches) + Delete
+  const onListKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selected) deleteSelected(selected, currentPath)
+      return
+    }
+    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+      const letter = e.key.toLowerCase()
+      const matches = entries.filter(en => en.name.toLowerCase().startsWith(letter))
+      if (matches.length === 0) return
+      let nextIdx: number
+      if (letterJump.current.letter === letter) {
+        // Same letter — advance to next match, wrap around
+        nextIdx = (letterJump.current.idx + 1) % matches.length
+      } else {
+        // New letter — start from first match
+        nextIdx = 0
+      }
+      letterJump.current = { letter, idx: nextIdx }
+      const match = matches[nextIdx]
+      setSelected(match.name)
+      const el = scrollRef.current?.querySelector(`[data-entry="${CSS.escape(match.name)}"]`) as HTMLElement
+      el?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [selected, currentPath, entries, deleteSelected])
 
   const parts = currentPath.split('/').filter(Boolean)
   const breadcrumbParts = ['/', ...parts]
@@ -204,7 +254,7 @@ export function FilesNode({ node }: Props): React.ReactElement {
     <BaseNode node={node}>
       <div
         style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0e0e0e', userSelect: 'none', position: 'relative' }}
-        onPointerDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => { useNodeStore.getState().setFocusedNodeId(node.id); e.stopPropagation() }}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes('application/canvaflow-repo')) {
             e.preventDefault()
@@ -213,6 +263,7 @@ export function FilesNode({ node }: Props): React.ReactElement {
         }}
         onDragLeave={() => setRepoDragOver(false)}
         onDrop={onDrop}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setSelected(null) }}
       >
         {/* Toolbar */}
         <div style={{
@@ -288,29 +339,27 @@ export function FilesNode({ node }: Props): React.ReactElement {
             padding: '4px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0,
           }}>
             {['Name', 'Size', 'Modified'].map(h => (
-              <span key={h} style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                {h}
-              </span>
+              <span key={h} style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{h}</span>
             ))}
           </div>
         )}
 
         {/* Content */}
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <div
+          ref={scrollRef}
+          tabIndex={0}
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', outline: 'none' }}
+          onKeyDown={onListKeyDown}
+          onClick={(e) => { if (e.target === e.currentTarget) setSelected(null) }}
+        >
           {loading && (
-            <div style={{ padding: '24px', color: 'rgba(255,255,255,0.25)', fontSize: 12, textAlign: 'center' }}>
-              Loading…
-            </div>
+            <div style={{ padding: '24px', color: 'rgba(255,255,255,0.25)', fontSize: 12, textAlign: 'center' }}>Loading…</div>
           )}
           {error && (
-            <div style={{ padding: '16px 12px', color: 'rgba(239,68,68,0.7)', fontSize: 12 }}>
-              {error}
-            </div>
+            <div style={{ padding: '16px 12px', color: 'rgba(239,68,68,0.7)', fontSize: 12 }}>{error}</div>
           )}
           {!loading && !error && entries.length === 0 && (
-            <div style={{ padding: '24px', color: 'rgba(255,255,255,0.2)', fontSize: 12, textAlign: 'center' }}>
-              Empty folder
-            </div>
+            <div style={{ padding: '24px', color: 'rgba(255,255,255,0.2)', fontSize: 12, textAlign: 'center' }}>Empty folder</div>
           )}
 
           {/* List view */}
@@ -320,7 +369,8 @@ export function FilesNode({ node }: Props): React.ReactElement {
             return (
               <div
                 key={entry.name}
-                onClick={() => setSelected(entry.name)}
+                data-entry={entry.name}
+                onClick={() => { setSelected(entry.name); scrollRef.current?.focus() }}
                 onDoubleClick={() => onEntryDoubleClick(entry, currentPath)}
                 style={{
                   display: 'grid', gridTemplateColumns: '1fr 80px 110px', alignItems: 'center',
@@ -338,9 +388,7 @@ export function FilesNode({ node }: Props): React.ReactElement {
                     fontSize: 12,
                     color: isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.72)',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {entry.name}
-                  </span>
+                  }}>{entry.name}</span>
                 </div>
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', fontVariantNumeric: 'tabular-nums' }}>
                   {entry.isDir ? '—' : formatSize(entry.size)}
@@ -354,50 +402,33 @@ export function FilesNode({ node }: Props): React.ReactElement {
 
           {/* Grid view */}
           {!loading && !error && viewMode === 'grid' && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
-              gap: 4, padding: 8,
-            }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 4, padding: 8 }}>
               {entries.map((entry) => {
                 const isSelected = selected === entry.name
                 const color = fileColor(entry.name, entry.isDir)
                 return (
                   <div
                     key={entry.name}
-                    onClick={() => setSelected(entry.name)}
+                    data-entry={entry.name}
+                    onClick={() => { setSelected(entry.name); scrollRef.current?.focus() }}
                     onDoubleClick={() => onEntryDoubleClick(entry, currentPath)}
                     style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'center',
-                      justifyContent: 'flex-start', gap: 6,
-                      padding: '10px 6px 8px',
+                      justifyContent: 'flex-start', gap: 6, padding: '10px 6px 8px',
                       background: isSelected ? 'rgba(139,92,246,0.18)' : 'transparent',
-                      borderRadius: 6,
-                      cursor: entry.isDir ? 'pointer' : 'default',
+                      borderRadius: 6, cursor: entry.isDir ? 'pointer' : 'default',
                       border: isSelected ? '1px solid rgba(139,92,246,0.3)' : '1px solid transparent',
                     }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent'
-                    }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)' }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                   >
                     {entry.isDir ? <FolderIconLarge color={color} /> : <FileIconLarge color={color} />}
                     <span style={{
-                      fontSize: 11,
-                      color: isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.65)',
-                      textAlign: 'center',
-                      wordBreak: 'break-word',
-                      lineHeight: '1.3',
-                      maxHeight: '2.6em',
-                      overflow: 'hidden',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                    }}>
-                      {entry.name}
-                    </span>
+                      fontSize: 11, color: isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.65)',
+                      textAlign: 'center', wordBreak: 'break-word', lineHeight: '1.3',
+                      maxHeight: '2.6em', overflow: 'hidden',
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    }}>{entry.name}</span>
                   </div>
                 )
               })}
@@ -419,34 +450,28 @@ export function FilesNode({ node }: Props): React.ReactElement {
         {repoDragOver && (
           <div style={{
             position: 'absolute', inset: 0, zIndex: 20,
-            background: 'rgba(139,92,246,0.12)',
-            border: '2px dashed rgba(139,92,246,0.5)',
-            borderRadius: 8,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 8, pointerEvents: 'none',
+            background: 'rgba(139,92,246,0.12)', border: '2px dashed rgba(139,92,246,0.5)',
+            borderRadius: 8, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 8, pointerEvents: 'none',
           }}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="rgba(139,92,246,0.7)">
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
             </svg>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'rgba(167,139,250,0.9)' }}>
-              Drop to clone here
-            </span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'rgba(167,139,250,0.9)' }}>Drop to clone here</span>
           </div>
         )}
 
-        {/* Clone in progress overlay */}
+        {/* Clone in progress */}
         {cloning && (
           <div style={{
-            position: 'absolute', inset: 0, zIndex: 20,
-            background: 'rgba(0,0,0,0.6)',
+            position: 'absolute', inset: 0, zIndex: 20, background: 'rgba(0,0,0,0.6)',
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
           }}>
             <div style={{
               width: 32, height: 32, borderRadius: '50%',
-              border: '2px solid rgba(139,92,246,0.2)',
-              borderTop: '2px solid rgba(139,92,246,0.8)',
+              border: '2px solid rgba(139,92,246,0.2)', borderTop: '2px solid rgba(139,92,246,0.8)',
               animation: 'spin 0.8s linear infinite',
-            }} />
+            }}/>
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
               Cloning <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{cloning}</strong>…
             </span>

@@ -138,7 +138,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
         const current = useNodeStore.getState().nodes.get(node.id)
         useNodeStore.getState().update(node.id, {
           title: short,
-          props: { ...current?.props, cwd: short },
+          props: { ...current?.props, cwd: raw },  // store full path, not the display-shortened one
         })
       } catch {}
       return false

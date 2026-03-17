@@ -80,6 +80,7 @@ declare global {
         modified: number
       }>>
       openFile: (filePath: string) => Promise<void>
+      delete: (filePath: string) => Promise<void>
     }
   }
 }
