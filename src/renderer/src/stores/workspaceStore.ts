@@ -13,6 +13,7 @@ export interface NodeSummary {
   id: string
   title: string
   type: string
+  subtitle?: string   // e.g. URL for browser nodes
 }
 
 interface WorkspaceState {

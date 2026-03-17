@@ -1,33 +1,53 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import MiniSearch from 'minisearch'
+import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useNodeStore, NodeData } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
+import { loadWorkspaceCanvas } from '../hooks/useWorkspaceInit'
+import { getCanvasRect } from '../utils/canvasUtils'
 
 interface Props {
   open: boolean
   onClose: () => void
 }
 
+interface SearchDoc {
+  id: string           // workspaceId:nodeId
+  nodeId: string
+  workspaceId: string
+  workspaceName: string
+  title: string
+  type: string
+  subtitle: string
+}
+
 function TypeIcon({ type }: { type: string }) {
   if (type === 'terminal') {
     return (
-      <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.07)', padding: '2px 5px', borderRadius: 4 }}>
+      <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.07)', padding: '2px 5px', borderRadius: 4 }}>
         &gt;_
       </span>
     )
   }
+  if (type === 'browser') {
+    return (
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ opacity: 0.35, flexShrink: 0 }}>
+        <rect x="1" y="1" width="11" height="11" rx="2.5" stroke="white" strokeWidth="1.2"/>
+        <path d="M1 4.5h11" stroke="white" strokeWidth="1.2"/>
+        <circle cx="3.5" cy="2.8" r="0.8" fill="white"/>
+      </svg>
+    )
+  }
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" style={{ opacity: 0.35, flexShrink: 0 }}>
-      <circle cx="7" cy="7" r="5.5" stroke="white" strokeWidth="1.2" fill="none"/>
-      <ellipse cx="7" cy="7" rx="2.5" ry="5.5" stroke="white" strokeWidth="1.2" fill="none"/>
-      <line x1="1.5" y1="7" x2="12.5" y2="7" stroke="white" strokeWidth="1.2"/>
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ opacity: 0.35, flexShrink: 0 }}>
+      <rect x="1.5" y="1.5" width="10" height="10" rx="2" stroke="white" strokeWidth="1.2"/>
     </svg>
   )
 }
 
 function jumpToNode(node: NodeData): void {
   const zoom = Math.max(useCameraStore.getState().camera.zoom, 0.7)
-  const vw = document.documentElement.clientWidth
-  const vh = document.documentElement.clientHeight
+  const { width: vw, height: vh } = getCanvasRect()
   useCameraStore.getState().setCamera({
     zoom,
     x: vw / 2 - (node.x + node.width / 2) * zoom,
@@ -36,19 +56,74 @@ function jumpToNode(node: NodeData): void {
 }
 
 export function CommandPalette({ open, onClose }: Props): React.ReactElement | null {
-  const nodeMap = useNodeStore(s => s.nodes)
-  const allNodes = useMemo(() => Array.from(nodeMap.values()), [nodeMap])
+  const { workspaces, nodeSummaries, activeId, setActive, touchWorkspace } = useWorkspaceStore()
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const filtered = query.trim()
-    ? allNodes.filter(n =>
-        n.title.toLowerCase().includes(query.toLowerCase()) ||
-        n.type.toLowerCase().includes(query.toLowerCase())
-      )
-    : allNodes
+  // Build MiniSearch index whenever nodeSummaries or workspaces change
+  const miniSearch = useMemo(() => {
+    const ms = new MiniSearch<SearchDoc>({
+      fields: ['title', 'subtitle', 'workspaceName'],
+      storeFields: ['nodeId', 'workspaceId', 'workspaceName', 'title', 'type', 'subtitle'],
+      searchOptions: {
+        boost: { title: 3 },
+        fuzzy: 0.25,
+        prefix: true,
+      },
+    })
+    const docs: SearchDoc[] = []
+    for (const [wsId, nodes] of Object.entries(nodeSummaries)) {
+      const ws = workspaces.find(w => w.id === wsId)
+      if (!ws) continue
+      for (const node of nodes) {
+        docs.push({
+          id: `${wsId}:${node.id}`,
+          nodeId: node.id,
+          workspaceId: wsId,
+          workspaceName: ws.name,
+          title: node.title,
+          type: node.type,
+          subtitle: node.subtitle ?? '',
+        })
+      }
+    }
+    ms.addAll(docs)
+    return ms
+  }, [nodeSummaries, workspaces])
+
+  // All docs for empty query (show everything, active workspace first)
+  const allDocs = useMemo<SearchDoc[]>(() => {
+    const docs: SearchDoc[] = []
+    // Active workspace first
+    const orderedWsIds = [
+      ...(activeId ? [activeId] : []),
+      ...workspaces.filter(w => w.id !== activeId).map(w => w.id),
+    ]
+    for (const wsId of orderedWsIds) {
+      const ws = workspaces.find(w => w.id === wsId)
+      if (!ws) continue
+      for (const node of nodeSummaries[wsId] ?? []) {
+        docs.push({
+          id: `${wsId}:${node.id}`,
+          nodeId: node.id,
+          workspaceId: wsId,
+          workspaceName: ws.name,
+          title: node.title,
+          type: node.type,
+          subtitle: node.subtitle ?? '',
+        })
+      }
+    }
+    return docs
+  }, [nodeSummaries, workspaces, activeId])
+
+  const results = useMemo<SearchDoc[]>(() => {
+    const q = query.trim()
+    if (!q) return allDocs
+    return miniSearch.search(q) as unknown as SearchDoc[]
+  }, [query, miniSearch, allDocs])
 
   useEffect(() => {
     if (open) {
@@ -60,23 +135,29 @@ export function CommandPalette({ open, onClose }: Props): React.ReactElement | n
 
   useEffect(() => { setActiveIdx(0) }, [query])
 
-  // Scroll active item into view
   useEffect(() => {
     if (!listRef.current) return
-    const active = listRef.current.children[activeIdx] as HTMLElement | undefined
-    active?.scrollIntoView({ block: 'nearest' })
+    const el = listRef.current.children[activeIdx] as HTMLElement | undefined
+    el?.scrollIntoView({ block: 'nearest' })
   }, [activeIdx])
 
-  const select = (node: NodeData) => {
+  const select = async (doc: SearchDoc) => {
     onClose()
-    jumpToNode(node)
+    if (doc.workspaceId !== activeId) {
+      touchWorkspace(doc.workspaceId)
+      setActive(doc.workspaceId)
+      await loadWorkspaceCanvas(doc.workspaceId)
+      await window.appState.set('lastWorkspaceId', doc.workspaceId)
+    }
+    const node = useNodeStore.getState().nodes.get(doc.nodeId)
+    if (node) jumpToNode(node)
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { onClose(); return }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, filtered.length - 1)) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, results.length - 1)) }
     if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)) }
-    if (e.key === 'Enter' && filtered[activeIdx]) { select(filtered[activeIdx]) }
+    if (e.key === 'Enter' && results[activeIdx]) { select(results[activeIdx]) }
   }
 
   if (!open) return null
@@ -86,14 +167,12 @@ export function CommandPalette({ open, onClose }: Props): React.ReactElement | n
       style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 120 }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      {/* backdrop */}
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)' }} />
 
-      {/* modal */}
       <div
         style={{
           position: 'relative',
-          width: 560,
+          width: 580,
           maxWidth: 'calc(100vw - 40px)',
           background: '#161616',
           border: '1px solid rgba(255,255,255,0.1)',
@@ -113,7 +192,7 @@ export function CommandPalette({ open, onClose }: Props): React.ReactElement | n
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search nodes..."
+            placeholder="Search across all workspaces…"
             style={{
               flex: 1,
               background: 'transparent',
@@ -130,43 +209,59 @@ export function CommandPalette({ open, onClose }: Props): React.ReactElement | n
           </span>
         </div>
 
-        {/* Node list */}
-        <div ref={listRef} style={{ maxHeight: 360, overflowY: 'auto', padding: '4px 0' }}>
-          {filtered.length === 0 ? (
+        {/* Results */}
+        <div ref={listRef} style={{ maxHeight: 380, overflowY: 'auto', padding: '4px 0' }}>
+          {results.length === 0 ? (
             <div style={{ padding: '24px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 13 }}>
-              No nodes found
+              No results
             </div>
           ) : (
-            filtered.map((node, i) => (
-              <div
-                key={node.id}
-                onMouseDown={() => select(node)}
-                onMouseEnter={() => setActiveIdx(i)}
-                style={{
-                  height: 40,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '0 16px',
-                  cursor: 'pointer',
-                  background: i === activeIdx ? 'rgba(255,255,255,0.07)' : 'transparent',
-                  transition: 'background 0.1s',
-                }}
-              >
-                <TypeIcon type={node.type} />
-                <span style={{ flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {node.title}
-                </span>
-                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', flexShrink: 0, textTransform: 'capitalize' }}>
-                  {node.type}
-                </span>
-              </div>
-            ))
+            results.map((doc, i) => {
+              const isActive = i === activeIdx
+              const isCrossWorkspace = doc.workspaceId !== activeId
+              return (
+                <div
+                  key={doc.id}
+                  onMouseDown={() => select(doc)}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  style={{
+                    height: doc.subtitle ? 48 : 40,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '0 16px',
+                    cursor: 'pointer',
+                    background: isActive ? 'rgba(255,255,255,0.07)' : 'transparent',
+                  }}
+                >
+                  <TypeIcon type={doc.type} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {doc.title}
+                    </div>
+                    {doc.subtitle && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
+                        {doc.subtitle}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {isCrossWorkspace && (
+                      <span style={{ fontSize: 10, color: 'rgba(167,139,250,0.7)', background: 'rgba(167,139,250,0.1)', padding: '2px 6px', borderRadius: 4 }}>
+                        {doc.workspaceName}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', textTransform: 'capitalize' }}>
+                      {doc.type}
+                    </span>
+                  </div>
+                </div>
+              )
+            })
           )}
         </div>
 
-        {/* Footer hint */}
-        {filtered.length > 0 && (
+        {results.length > 0 && (
           <div style={{ padding: '6px 16px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: 12 }}>
             {[['↑↓', 'navigate'], ['↵', 'jump to'], ['esc', 'close']].map(([key, label]) => (
               <span key={key} style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', gap: 5 }}>

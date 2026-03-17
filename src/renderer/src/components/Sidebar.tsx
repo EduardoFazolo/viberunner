@@ -373,6 +373,11 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
       if (!id) return
       const summaries = Array.from(state.nodes.values()).map((n) => ({
         id: n.id, title: n.title, type: n.type,
+        subtitle: n.type === 'browser'
+          ? (n.props.url as string | undefined)
+          : n.type === 'terminal'
+            ? (n.props.cwd as string | undefined)
+            : undefined,
       }))
       setNodeSummaries(id, summaries)
     })

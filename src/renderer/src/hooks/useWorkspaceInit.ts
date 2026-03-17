@@ -82,7 +82,11 @@ export function useWorkspaceInit(): void {
         dbWorkspaces.map(async (ws: Workspace) => {
           try {
             const rows = await window.canvas.getNodes(ws.id)
-            return [ws.id, rows.map((r: any) => ({ id: r.id, title: r.title, type: r.type }))] as const
+            return [ws.id, rows.map((r: any) => {
+              let subtitle: string | undefined
+              try { subtitle = r.type === 'browser' ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
+              return { id: r.id, title: r.title, type: r.type, subtitle }
+            })] as const
           } catch {
             return [ws.id, []] as const
           }
@@ -123,7 +127,11 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
     // Update sidebar summaries for this workspace
     useWorkspaceStore.getState().setNodeSummaries(
       workspaceId,
-      nodeRows.map((r: any) => ({ id: r.id, title: r.title, type: r.type }))
+      nodeRows.map((r: any) => {
+        let subtitle: string | undefined
+        try { subtitle = r.type === 'browser' ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
+        return { id: r.id, title: r.title, type: r.type, subtitle }
+      })
     )
 
     // Hydrate camera

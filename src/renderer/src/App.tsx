@@ -37,7 +37,7 @@ export default function App(): React.ReactElement {
         }}>
           <Sidebar onOpenSettings={openSettings} />
         </div>
-        <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+        <div data-canvas-root style={{ flex: 1, minWidth: 0, position: 'relative' }}>
           <Canvas />
         </div>
       </div>

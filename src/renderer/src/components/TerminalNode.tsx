@@ -115,6 +115,49 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     // xterm → PTY
     term.onData((data) => window.terminal.write(node.id, data))
 
+    // OSC 7: shell reports CWD as file://hostname/path
+    // Most modern shells (zsh+oh-my-zsh, fish, bash with vte) emit this on every cd
+    term.parser.registerOscHandler(7, (data) => {
+      try {
+        const raw = data.startsWith('file://')
+          ? decodeURIComponent(new URL(data).pathname)
+          : decodeURIComponent(data)
+        const parts = raw.split('/').filter(Boolean)
+        // Shorten: ~/foo → just show foo, /usr/local/bin → usr/local/bin
+        const home = raw.includes('/Users/') || raw.includes('/home/')
+        const homeIdx = raw.indexOf('/Users/') >= 0
+          ? raw.indexOf('/Users/') : raw.indexOf('/home/')
+        const afterHome = homeIdx >= 0
+          ? raw.slice(raw.indexOf('/', homeIdx + 1) + 1)
+          : null
+        const short = afterHome !== null && afterHome !== ''
+          ? '~/' + afterHome
+          : afterHome === ''
+            ? '~'
+            : '/' + parts.join('/')
+        const current = useNodeStore.getState().nodes.get(node.id)
+        useNodeStore.getState().update(node.id, {
+          title: short,
+          props: { ...current?.props, cwd: short },
+        })
+      } catch {}
+      return false
+    })
+
+    // OSC 2: shell / running process sets the window title
+    // Fired by most shells and programs (vim, htop, etc.)
+    term.onTitleChange((title) => {
+      if (!title) return
+      const current = useNodeStore.getState().nodes.get(node.id)
+      // Only update if it doesn't look like a raw OSC 7 path repeated
+      if (!title.startsWith('file://')) {
+        useNodeStore.getState().update(node.id, {
+          title,
+          props: { ...current?.props },
+        })
+      }
+    })
+
     // Periodically update nodeStore with serialized state so autosave keeps SQLite fresh
     saveTimerRef.current = setInterval(() => {
       if (serializeAddonRef.current) {
