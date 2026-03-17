@@ -292,6 +292,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
   const dragRef = useRef(drag)
   useEffect(() => { dragRef.current = drag }, [drag])
   const prevWebviewPos = useRef({ x: 0, y: 0 })
+  const prefetchedChunk = useRef<any>(null)
 
   const cameraZoomRef = useRef(useCameraStore.getState().camera.zoom)
   const [isThumbnailMode, setIsThumbnailMode] = useState(
@@ -364,18 +365,21 @@ export function NotionNode({ node }: Props): React.ReactElement {
     wv.addEventListener('did-fail-load', onFail)
     wv.addEventListener('page-title-updated', onTitle)
 
-    // IPC messages from webview preload
-    const onIpcMessage = async (e: any) => {
+    // IPC messages from webview preload — intentionally synchronous, no awaits
+    const onIpcMessage = (e: any) => {
       const { channel, args } = e
       if (channel === 'notion:drag-start') {
         const { pageId, title, x, y } = args[0]
         prevWebviewPos.current = { x, y }
-        // Ask main process for the true cursor position — bypasses any coord system mismatch
-        const pos = await window.app.getCursorPos()
-        setDrag({ active: true, pageId, title, ghostX: pos.x, ghostY: pos.y, loading: false })
+        prefetchedChunk.current = null
+        // Ghost starts off-screen; first drag-move / host pointermove will position it
+        setDrag({ active: true, pageId, title, ghostX: -9999, ghostY: -9999, loading: false })
+        // Prefetch is fully fire-and-forget — never touches drag state
+        window.notion.fetchPage(partition, pageId)
+          .then(chunk => { prefetchedChunk.current = chunk })
+          .catch(() => {})
       } else if (channel === 'notion:drag-move') {
         const { x, y } = args[0]
-        // Delta-track relative to the last known webview position, scaled to viewport
         const dx = x - prevWebviewPos.current.x
         const dy = y - prevWebviewPos.current.y
         prevWebviewPos.current = { x, y }
@@ -386,6 +390,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
       } else if (channel === 'notion:drag-end') {
         // Host pointerup handles the actual drop — nothing to do here
       } else if (channel === 'notion:drag-cancel') {
+        prefetchedChunk.current = null
         setDrag(d => ({ ...d, active: false }))
       }
     }
@@ -408,37 +413,46 @@ export function NotionNode({ node }: Props): React.ReactElement {
       setDrag(d => ({ ...d, ghostX: e.clientX, ghostY: e.clientY }))
     }
 
-    const onUp = async (e: PointerEvent) => {
+    const onUp = (e: PointerEvent) => {
       const canvasEl = document.querySelector('[data-canvas-root]')
       const canvasRect = canvasEl?.getBoundingClientRect()
       const { pageId, title } = dragRef.current
 
-      setDrag(d => ({ ...d, loading: true }))
+      // Hide ghost immediately — no blocking work on this frame
+      setDrag({ active: false, pageId: '', title: '', ghostX: 0, ghostY: 0, loading: false })
 
       if (
         canvasRect &&
         e.clientX >= canvasRect.left && e.clientX <= canvasRect.right &&
         e.clientY >= canvasRect.top && e.clientY <= canvasRect.bottom
       ) {
-        try {
-          const camera = useCameraStore.getState().camera
-          const wx = (e.clientX - canvasRect.left - camera.x) / camera.zoom
-          const wy = (e.clientY - canvasRect.top - camera.y) / camera.zoom
+        const camera = useCameraStore.getState().camera
+        const wx = (e.clientX - canvasRect.left - camera.x) / camera.zoom
+        const wy = (e.clientY - canvasRect.top - camera.y) / camera.zoom
 
-          const chunk = await window.notion.fetchPage(partition, pageId)
-          const content = notionChunkToTiptap(pageId, chunk.recordMap.block)
+        // Create the note immediately with just the title, fill content async
+        const newNode = useNodeStore.getState().add('note', wx - 150, wy - 100, {
+          content: null,
+          showToolbar: false,
+        })
+        useNodeStore.getState().update(newNode.id, { title });
 
-          const newNode = useNodeStore.getState().add('note', wx - 150, wy - 100, {
-            content,
-            showToolbar: false,
-          })
-          useNodeStore.getState().update(newNode.id, { title })
-        } catch (err) {
-          console.error('Failed to fetch Notion page:', err)
-        }
+        (async () => {
+          try {
+            const chunk = prefetchedChunk.current ?? await window.notion.fetchPage(partition, pageId)
+            prefetchedChunk.current = null
+            const content = notionChunkToTiptap(pageId, chunk.recordMap.block)
+            const current = useNodeStore.getState().nodes.get(newNode.id)
+            if (current) {
+              useNodeStore.getState().update(newNode.id, {
+                props: { ...current.props, content },
+              })
+            }
+          } catch (err) {
+            console.error('Failed to fetch Notion page:', err)
+          }
+        })()
       }
-
-      setDrag({ active: false, pageId: '', title: '', ghostX: 0, ghostY: 0, loading: false })
     }
 
     document.addEventListener('pointermove', onMove)
