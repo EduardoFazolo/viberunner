@@ -36,6 +36,9 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
           <span style={{ flex: 1 }}>New Browser</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘B</span>
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => add('notion', clickWorldPos.current.x - 450, clickWorldPos.current.y - 350)}>
+          New Notion
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => fitAllNodes(useNodeStore.getState().nodes)}>
           <span style={{ flex: 1 }}>Fit All Nodes</span>

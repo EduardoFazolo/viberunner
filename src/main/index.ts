@@ -42,7 +42,6 @@ function createWindow(): void {
     else if (mod && (input.key === '=' || input.key === '+')) { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomIn') }
     else if (mod && input.key === '-') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomOut') }
     else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
-    else if (mod && input.key === 'n') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newNotion') }
 
   })
 

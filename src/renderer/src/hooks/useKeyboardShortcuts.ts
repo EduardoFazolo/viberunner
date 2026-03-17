@@ -39,15 +39,6 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
           useNodeStore.getState().add('files', wx - 350, wy - 240)
           break
         }
-        case 'newNotion': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
-          useNodeStore.getState().add('notion', wx - 450, wy - 350)
-          break
-        }
         case 'fitAll':
           fitAllNodes(useNodeStore.getState().nodes)
           break
