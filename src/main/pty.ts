@@ -63,7 +63,7 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
   })
 
   ipcMain.handle('terminal:resize', (_event, id: string, cols: number, rows: number) => {
-    ptys.get(id)?.resize(cols, rows)
+    try { ptys.get(id)?.resize(cols, rows) } catch { /* PTY already closed */ }
   })
 
   ipcMain.handle('terminal:kill', async (_event, id: string, workspaceId: string, deleteSession: boolean) => {
