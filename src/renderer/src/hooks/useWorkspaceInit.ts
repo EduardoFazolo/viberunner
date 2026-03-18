@@ -2,8 +2,11 @@ import { useEffect } from 'react'
 import { nanoid } from 'nanoid'
 import { useWorkspaceStore, Workspace } from '../stores/workspaceStore'
 import { useNodeStore, NodeData, NodeType } from '../stores/nodeStore'
-import { useCameraStore } from '../stores/cameraStore'
+import { useCameraStore, Camera } from '../stores/cameraStore'
 import { useSettingsStore } from '../stores/settingsStore'
+
+// Per-workspace camera cache — avoids DB round-trip when switching back to a visited workspace
+const _workspaceCameraCache = new Map<string, Camera>()
 
 // ---------------------------------------------------------------------------
 // Convert DB row → NodeData
@@ -113,41 +116,55 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
   const api = window
 
   try {
-    const [nodeRows, cameraRow] = await Promise.all([
-      api.canvas.getNodes(workspaceId),
-      api.canvas.getCamera(workspaceId),
-    ])
-
-    // Hydrate node store
-    const nodes = new Map<string, NodeData>()
-    for (const row of nodeRows) {
-      const node = rowToNode(row)
-      nodes.set(node.id, node)
+    // Save current workspace's live camera before switching away
+    const currentWsId = useNodeStore.getState().activeWorkspaceId
+    if (currentWsId && currentWsId !== workspaceId) {
+      _workspaceCameraCache.set(currentWsId, useCameraStore.getState().camera)
     }
-    useNodeStore.setState({ nodes })
 
-    // Update sidebar summaries for this workspace
-    useWorkspaceStore.getState().setNodeSummaries(
-      workspaceId,
-      nodeRows.map((r: any) => {
-        let subtitle: string | undefined
-        try { subtitle = r.type === 'browser' ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
-        return { id: r.id, title: r.title, type: r.type, subtitle }
-      })
-    )
+    // If this workspace's nodes are already in memory, just switch to them
+    const existing = useNodeStore.getState().workspaceNodes.get(workspaceId)
 
-    // Hydrate camera
-    if (cameraRow) {
-      useCameraStore.setState({ camera: { x: cameraRow.x, y: cameraRow.y, zoom: cameraRow.zoom } })
+    if (existing) {
+      useNodeStore.getState().loadWorkspace(workspaceId, existing)
     } else {
-      useCameraStore.setState({ camera: { x: 0, y: 0, zoom: 1 } })
+      // First visit — load from DB
+      const nodeRows = await api.canvas.getNodes(workspaceId)
+      const nodes = new Map<string, NodeData>()
+      for (const row of nodeRows) {
+        const node = rowToNode(row)
+        nodes.set(node.id, node)
+      }
+      useNodeStore.getState().loadWorkspace(workspaceId, nodes)
+
+      // Update sidebar summaries
+      useWorkspaceStore.getState().setNodeSummaries(
+        workspaceId,
+        nodeRows.map((r: any) => {
+          let subtitle: string | undefined
+          try { subtitle = r.type === 'browser' ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
+          return { id: r.id, title: r.title, type: r.type, subtitle }
+        })
+      )
     }
 
-    // Persist active workspace ID
+    // Restore camera: use in-memory cache if available, else load from DB
+    const cachedCamera = _workspaceCameraCache.get(workspaceId)
+    if (cachedCamera) {
+      useCameraStore.setState({ camera: cachedCamera })
+    } else {
+      const cameraRow = await api.canvas.getCamera(workspaceId)
+      if (cameraRow) {
+        useCameraStore.setState({ camera: { x: cameraRow.x, y: cameraRow.y, zoom: cameraRow.zoom } })
+      } else {
+        useCameraStore.setState({ camera: { x: 0, y: 0, zoom: 1 } })
+      }
+    }
+
     await api.appState.set('lastWorkspaceId', workspaceId)
   } catch (err) {
     console.error('[workspace] Failed to load canvas:', err)
-    useNodeStore.setState({ nodes: new Map() })
+    useNodeStore.getState().loadWorkspace(workspaceId, new Map())
     useCameraStore.setState({ camera: { x: 0, y: 0, zoom: 1 } })
   }
 }

@@ -73,25 +73,31 @@ export function useAutoSave(): void {
 
     // Force-save on page unload — synchronous so it completes before the window closes
     const onBeforeUnload = () => {
-      const workspaceId = useWorkspaceStore.getState().activeId
-      if (!workspaceId) return
-
-      // Serialize all live terminals and inject into the store before saving
+      // Serialize all live terminals and inject into their nodes (across all workspaces)
       const terminalStates = serializeAllTerminals()
       for (const [nodeId, serializedState] of terminalStates) {
-        const current = useNodeStore.getState().nodes.get(nodeId)
-        if (current) {
-          useNodeStore.getState().update(nodeId, { props: { ...current.props, serializedState } })
+        // Terminal might be in any workspace — check all of them
+        const { workspaceNodes } = useNodeStore.getState()
+        for (const nodes of workspaceNodes.values()) {
+          const current = nodes.get(nodeId)
+          if (current) {
+            nodes.set(nodeId, { ...current, props: { ...current.props, serializedState } })
+            break
+          }
         }
       }
 
-      // Synchronous save — blocks until SQLite write completes (renderer stays alive)
-      const nodes = useNodeStore.getState().nodes
-      const rows = Array.from(nodes.values()).map((n) => nodeToRow(n, workspaceId))
-      window.canvas.saveNodesSync(workspaceId, rows)
+      // Synchronous save of ALL loaded workspaces
+      const { workspaceNodes, activeWorkspaceId } = useNodeStore.getState()
+      for (const [wsId, nodes] of workspaceNodes.entries()) {
+        const rows = Array.from(nodes.values()).map((n) => nodeToRow(n, wsId))
+        window.canvas.saveNodesSync(wsId, rows)
+      }
 
-      // Camera can remain async (non-critical)
-      window.canvas.saveCamera({ workspaceId, ...useCameraStore.getState().camera })
+      // Camera: save active workspace (others were saved on switch via cameraStore subscriber)
+      if (activeWorkspaceId) {
+        window.canvas.saveCamera({ workspaceId: activeWorkspaceId, ...useCameraStore.getState().camera })
+      }
     }
 
     window.addEventListener('beforeunload', onBeforeUnload)

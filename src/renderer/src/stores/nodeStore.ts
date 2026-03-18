@@ -17,7 +17,16 @@ export interface NodeData {
 }
 
 interface NodeStore {
+  // Active workspace nodes (for all existing consumers — API unchanged)
   nodes: Map<string, NodeData>
+  // All workspaces' nodes — kept alive so components never unmount on workspace switch
+  workspaceNodes: Map<string, Map<string, NodeData>>
+  activeWorkspaceId: string
+
+  // Workspace management
+  loadWorkspace: (wsId: string, nodes: Map<string, NodeData>) => void
+
+  // Unchanged public API
   focusedNodeId: string | null
   setFocusedNodeId: (id: string | null) => void
   add: (type: NodeType, x: number, y: number, props?: Record<string, unknown>) => NodeData
@@ -50,9 +59,25 @@ const DEFAULT_TITLES: Record<NodeType, string> = {
   monaco: 'Untitled',
 }
 
+// Sync helper: after mutating `nodes`, write it back into workspaceNodes
+function syncBack(nodes: Map<string, NodeData>, s: NodeStore): Partial<NodeStore> {
+  const workspaceNodes = new Map(s.workspaceNodes)
+  workspaceNodes.set(s.activeWorkspaceId, nodes)
+  return { nodes, workspaceNodes }
+}
+
 export const useNodeStore = create<NodeStore>((set, get) => ({
   nodes: new Map(),
+  workspaceNodes: new Map(),
+  activeWorkspaceId: '',
   focusedNodeId: null,
+
+  loadWorkspace: (wsId, nodes) => set((s) => {
+    const workspaceNodes = new Map(s.workspaceNodes)
+    workspaceNodes.set(wsId, nodes)
+    return { nodes, workspaceNodes, activeWorkspaceId: wsId, focusedNodeId: null }
+  }),
+
   setFocusedNodeId: (id) => set({ focusedNodeId: id }),
 
   add: (type, x, y, props = {}) => {
@@ -69,7 +94,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
     set((s) => {
       const nodes = new Map(s.nodes)
       nodes.set(id, node)
-      return { nodes }
+      return syncBack(nodes, s)
     })
     return node
   },
@@ -77,7 +102,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
   remove: (id) => set((s) => {
     const nodes = new Map(s.nodes)
     nodes.delete(id)
-    return { nodes }
+    return syncBack(nodes, s)
   }),
 
   update: (id, patch) => set((s) => {
@@ -85,7 +110,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
     if (!node) return s
     const nodes = new Map(s.nodes)
     nodes.set(id, { ...node, ...patch })
-    return { nodes }
+    return syncBack(nodes, s)
   }),
 
   bringToFront: (id) => set((s) => {
@@ -93,7 +118,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
     if (!node) return s
     const nodes = new Map(s.nodes)
     nodes.set(id, { ...node, zIndex: get().getMaxZIndex() + 1 })
-    return { nodes }
+    return syncBack(nodes, s)
   }),
 
   sendToBack: (id) => set((s) => {
@@ -102,7 +127,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
     const nodes = new Map(s.nodes)
     const minZ = Math.min(...Array.from(s.nodes.values()).map(n => n.zIndex))
     nodes.set(id, { ...node, zIndex: minZ - 1 })
-    return { nodes }
+    return syncBack(nodes, s)
   }),
 
   getMaxZIndex: () => {
