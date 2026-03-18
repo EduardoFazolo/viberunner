@@ -11,8 +11,8 @@ interface UseCanvasDragReturn {
   isDragging: boolean
   ghostX: number
   ghostY: number
-  /** Begin a drag. Ghost starts off-screen until the first pointermove or nudge. */
-  startDrag(): void
+  /** Begin a drag. Pass screen-space client coords to pre-position the ghost. */
+  startDrag(initClientX?: number, initClientY?: number): void
   /** Shift the ghost position by the given delta (used for in-webview pointer tracking). */
   nudge(dx: number, dy: number): void
   /** Abort the active drag without triggering onDrop. */
@@ -33,15 +33,25 @@ export function useCanvasDrag(options: UseCanvasDragOptions): UseCanvasDragRetur
   const [ghostY, setGhostY] = useState(-9999)
   const [isDragging, setIsDragging] = useState(false)
 
+  // Track last known host-page pointer position so startDrag can pre-position the ghost
+  const lastHostPos = useRef({ x: -9999, y: -9999 })
+
   // Keep option callbacks in refs so the effect doesn't need to re-subscribe
   const onMoveRef = useRef(options.onMove)
   const onDropRef = useRef(options.onDrop)
   useEffect(() => { onMoveRef.current = options.onMove }, [options.onMove])
   useEffect(() => { onDropRef.current = options.onDrop }, [options.onDrop])
 
-  const startDrag = useCallback(() => {
-    setGhostX(-9999)
-    setGhostY(-9999)
+  // Passively track the pointer on the host page (always active, no side effects)
+  useEffect(() => {
+    const track = (e: PointerEvent) => { lastHostPos.current = { x: e.clientX, y: e.clientY } }
+    document.addEventListener('pointermove', track, { passive: true, capture: true })
+    return () => document.removeEventListener('pointermove', track, { capture: true } as any)
+  }, [])
+
+  const startDrag = useCallback((initClientX?: number, initClientY?: number) => {
+    setGhostX(initClientX ?? lastHostPos.current.x)
+    setGhostY(initClientY ?? lastHostPos.current.y)
     setIsDragging(true)
   }, [])
 

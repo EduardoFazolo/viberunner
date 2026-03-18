@@ -171,6 +171,8 @@ document.addEventListener('pointerdown', (e) => {
     title: extractTitle(link),
     x: e.clientX,
     y: e.clientY,
+    viewportWidth: document.documentElement.clientWidth,
+    viewportHeight: document.documentElement.clientHeight,
     cardRect: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
   })
 }, true)

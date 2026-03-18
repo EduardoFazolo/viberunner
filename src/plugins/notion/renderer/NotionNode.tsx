@@ -293,6 +293,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
   const dragDataRef = useRef<{ pageId: string; title: string } | null>(null)
   const [activeDragTitle, setActiveDragTitle] = useState('')
   const prevWebviewPos = useRef({ x: 0, y: 0 })
+  const webviewViewport = useRef({ width: 0, height: 0 })
   const prefetchedChunk = useRef<any>(null)
 
   const [dropTarget, setDropTarget] = useState<DragDropTarget | null>(null)
@@ -481,13 +482,19 @@ export function NotionNode({ node }: Props): React.ReactElement {
     const onIpcMessage = (e: any) => {
       const { channel, args } = e
       if (channel === 'notion:drag-start') {
-        const { pageId, title, x, y } = args[0]
+        const { pageId, title, x, y, viewportWidth, viewportHeight } = args[0]
         prevWebviewPos.current = { x, y }
+        webviewViewport.current = { width: viewportWidth ?? 0, height: viewportHeight ?? 0 }
         prefetchedChunk.current = null
         dragDataRef.current = { pageId, title }
         setActiveDragTitle(title)
         setDropTarget(null)
-        startDrag()
+        // Use cursor ratio within the webview viewport → converts correctly regardless of
+        // DPR, camera zoom, or any CSS zoom Notion applies to its own content.
+        const wvRect = (webviewRef.current as HTMLElement)?.getBoundingClientRect()
+        const initX = (wvRect && viewportWidth)  ? wvRect.left + (x / viewportWidth)  * wvRect.width  : undefined
+        const initY = (wvRect && viewportHeight) ? wvRect.top  + (y / viewportHeight) * wvRect.height : undefined
+        startDrag(initX, initY)
         // Prefetch page content fire-and-forget
         window.notion.fetchPage(partition, pageId)
           .then(chunk => { prefetchedChunk.current = chunk })
@@ -499,8 +506,9 @@ export function NotionNode({ node }: Props): React.ReactElement {
         const dy = y - prevWebviewPos.current.y
         prevWebviewPos.current = { x, y }
         const rect = (webviewRef.current as HTMLElement).getBoundingClientRect()
-        const scaleX = rect.width / node.width
-        const scaleY = rect.height / (node.height - TITLE_H - TOOLBAR_H)
+        const { width: vpW, height: vpH } = webviewViewport.current
+        const scaleX = vpW > 0 ? rect.width  / vpW : rect.width  / node.width
+        const scaleY = vpH > 0 ? rect.height / vpH : rect.height / (node.height - TITLE_H - TOOLBAR_H)
         nudge(dx * scaleX, dy * scaleY)
       } else if (channel === 'notion:drag-cancel') {
         prefetchedChunk.current = null
