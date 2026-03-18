@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useWorkspaceStore, Workspace, NodeSummary } from '../stores/workspaceStore'
+import { useViewStore } from '../stores/viewStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { useTemplateStore, NodeTemplate } from '../stores/templateStore'
 import { useSessionStore, BrowserSession } from '../stores/sessionStore'
@@ -378,7 +379,7 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace }: {
 // Sidebar
 // ---------------------------------------------------------------------------
 
-export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): React.ReactElement {
+export function Sidebar(): React.ReactElement {
   const { workspaces, activeId, setActive, removeWorkspace, touchWorkspace, nodeSummaries, setNodeSummaries } =
     useWorkspaceStore()
   const { templates, loaded: templatesLoaded, load: loadTemplates, remove: removeTemplate,
@@ -534,7 +535,9 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings?: () => void }): Re
           borderTop: '1px solid rgba(255,255,255,0.05)',
           display: 'flex', justifyContent: 'flex-end',
         }}>
-          <GearButton onClick={() => onOpenSettings?.()} />
+          <GearButton onClick={() => useViewStore.getState().open(
+          { id: 'settings', type: 'settings', label: 'Settings', closeable: true }
+        )} />
         </div>
       </div>
 

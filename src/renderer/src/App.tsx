@@ -1,12 +1,13 @@
-import React, { useCallback, useState } from 'react'
-import { Canvas } from './components/Canvas'
+import React, { useState, useCallback } from 'react'
 import { Sidebar, SIDEBAR_W } from './components/Sidebar'
 import { TitleBar } from './components/TitleBar'
 import { CommandPalette } from './components/CommandPalette'
-import { SettingsPanel } from './components/SettingsPanel'
+import { ViewTabBar } from './components/ViewTabBar'
+import { ViewLayer } from './components/ViewLayer'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useViewStore } from './stores/viewStore'
 
 export default function App(): React.ReactElement {
   useWorkspaceInit()
@@ -14,10 +15,11 @@ export default function App(): React.ReactElement {
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const openPalette = useCallback(() => setPaletteOpen(true), [])
-  const openSettings = useCallback(() => setSettingsOpen(true), [])
+  const openSettings = useCallback(() => useViewStore.getState().open(
+    { id: 'settings', type: 'settings', label: 'Settings', closeable: true }
+  ), [])
 
   useKeyboardShortcuts({ onSearch: openPalette, onSettings: openSettings })
 
@@ -35,14 +37,14 @@ export default function App(): React.ReactElement {
           transition: 'width 0.2s ease',
           flexShrink: 0,
         }}>
-          <Sidebar onOpenSettings={openSettings} />
+          <Sidebar />
         </div>
-        <div data-canvas-root style={{ flex: 1, minWidth: 0, position: 'relative' }}>
-          <Canvas />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <ViewTabBar />
+          <ViewLayer />
         </div>
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }
