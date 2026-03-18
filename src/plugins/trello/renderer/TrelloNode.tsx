@@ -33,6 +33,10 @@ declare global {
 const TITLE_H = 32
 const TOOLBAR_H = 36
 const TRELLO_URL = 'https://trello.com'
+
+function getInitialUrl(props: Record<string, unknown>): string {
+  return (props.url as string) || TRELLO_URL
+}
 const TRELLO_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 function getPartition(sessionId: string | undefined, nodeId: string): string {
@@ -323,6 +327,7 @@ export function TrelloNode({ node }: Props): React.ReactElement {
   const sessionId = node.props.sessionId as string | undefined
   const partition = getPartition(sessionId, node.id)
 
+  const initialUrl = useRef<string>(getInitialUrl(node.props))
   const [loading, setLoading] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
   const [apiKey, setApiKey] = useState('')
@@ -512,11 +517,16 @@ export function TrelloNode({ node }: Props): React.ReactElement {
     const onStop = () => setLoading(false)
     const onFail = () => setLoading(false)
     const onTitle = (e: any) => { if (e.title) update(node.id, { title: e.title }) }
+    const onNavigate = (e: any) => {
+      if (e.url) update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url: e.url } })
+    }
 
     wv.addEventListener('did-start-loading', onStart)
     wv.addEventListener('did-stop-loading', onStop)
     wv.addEventListener('did-fail-load', onFail)
     wv.addEventListener('page-title-updated', onTitle)
+    wv.addEventListener('did-navigate', onNavigate)
+    wv.addEventListener('did-navigate-in-page', onNavigate)
 
     const onIpcMessage = (e: any) => {
       const { channel, args } = e
@@ -583,6 +593,8 @@ export function TrelloNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('did-stop-loading', onStop)
       wv.removeEventListener('did-fail-load', onFail)
       wv.removeEventListener('page-title-updated', onTitle)
+      wv.removeEventListener('did-navigate', onNavigate)
+      wv.removeEventListener('did-navigate-in-page', onNavigate)
       wv.removeEventListener('ipc-message', onIpcMessage)
     }
   }, [node.id, node.width, node.height, preloadPath, update, startDrag, nudge, cancel, apiKey, token])
@@ -738,7 +750,7 @@ export function TrelloNode({ node }: Props): React.ReactElement {
               <webview
                 key={partition}
                 ref={webviewRef}
-                src={TRELLO_URL}
+                src={initialUrl.current}
                 partition={partition}
                 preload={preloadPath}
                 allowpopups=""

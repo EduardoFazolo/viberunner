@@ -10,6 +10,9 @@ import { registerNotionHandlers } from '../plugins/notion/main/handlers'
 import { registerTrelloHandlers } from '../plugins/trello/main/handlers'
 import { registerGitHandlers } from '../plugins/monaco/main/gitHandlers'
 
+// Suppress noisy Chromium GPU/Skia internal errors that are benign in webview usage
+app.commandLine.appendSwitch('log-level', '3')
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
