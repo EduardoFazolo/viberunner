@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
 import { getActiveWorkspace } from '../../../renderer/src/stores/workspaceStore'
-import { getPreparedNotionExternalDrag, primeNotionExternalDrag } from '../utils/notionDrag'
+import { getPreparedNotionExternalDrag, primeNotionExternalDrag, createNotionNoteFromDrop } from '../utils/notionDrag'
 
 export interface NotionDropPayload {
   title: string
@@ -26,6 +26,16 @@ const AGENTS: Agent[] = [
     icon: (
       <svg width="13" height="13" viewBox="0 0 20 20" fill="none">
         <path d="M10 2l2.5 5.5L18 10l-5.5 2.5L10 18l-2.5-5.5L2 10l5.5-2.5L10 2z" fill="currentColor"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'note',
+    label: 'Note',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 20 20" fill="none">
+        <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M6.5 7h7M6.5 10h7M6.5 13h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
       </svg>
     ),
   },
@@ -86,6 +96,18 @@ export function NotionDropModal({ payload, onClose }: Props): React.ReactElement
   }, [workspace?.path])
 
   const handleStartAgent = useCallback(async (agentId: string) => {
+    if (agentId === 'note') {
+      setLoading(true)
+      try {
+        await createNotionNoteFromDrop({ title, pageId, partition }, clientX, clientY)
+        onClose()
+      } catch (e) {
+        console.error('[NotionDropModal] note error:', e)
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
     if (agentId !== 'claude') return
     setLoading(true)
     try {
@@ -231,51 +253,60 @@ export function NotionDropModal({ payload, onClose }: Props): React.ReactElement
             Start session with
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {AGENTS.map((agent) => (
-              <button
-                key={agent.id}
-                onClick={() => handleStartAgent(agent.id)}
-                disabled={loading}
-                style={{
-                  width: '100%', textAlign: 'left',
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(167,139,250,0.25)',
-                  background: 'rgba(167,139,250,0.08)',
-                  color: loading ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.88)',
-                  fontSize: 13, fontWeight: 500,
-                  cursor: loading ? 'default' : 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 9,
-                  fontFamily: 'inherit',
-                  transition: 'background 0.1s, border-color 0.1s',
-                }}
-                onMouseEnter={(e) => {
-                  if (!loading) {
+            {AGENTS.map((agent) => {
+              const isPrimary = agent.id === 'claude'
+              const borderColor = isPrimary ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.08)'
+              const bgColor = isPrimary ? 'rgba(167,139,250,0.08)' : 'rgba(255,255,255,0.04)'
+              const borderHover = isPrimary ? 'rgba(167,139,250,0.45)' : 'rgba(255,255,255,0.15)'
+              const bgHover = isPrimary ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.07)'
+              const iconColor = isPrimary ? 'rgba(167,139,250,0.9)' : 'rgba(255,255,255,0.45)'
+              const iconBg = isPrimary ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.07)'
+              return (
+                <button
+                  key={agent.id}
+                  onClick={() => handleStartAgent(agent.id)}
+                  disabled={loading}
+                  style={{
+                    width: '100%', textAlign: 'left',
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: `1px solid ${borderColor}`,
+                    background: bgColor,
+                    color: loading ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.88)',
+                    fontSize: 13, fontWeight: 500,
+                    cursor: loading ? 'default' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 9,
+                    fontFamily: 'inherit',
+                    transition: 'background 0.1s, border-color 0.1s',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading) {
+                      Object.assign((e.currentTarget as HTMLElement).style, {
+                        background: bgHover,
+                        borderColor: borderHover,
+                      })
+                    }
+                  }}
+                  onMouseLeave={(e) => {
                     Object.assign((e.currentTarget as HTMLElement).style, {
-                      background: 'rgba(167,139,250,0.15)',
-                      borderColor: 'rgba(167,139,250,0.45)',
+                      background: bgColor,
+                      borderColor: borderColor,
                     })
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  Object.assign((e.currentTarget as HTMLElement).style, {
-                    background: 'rgba(167,139,250,0.08)',
-                    borderColor: 'rgba(167,139,250,0.25)',
-                  })
-                }}
-              >
-                <span style={{
-                  width: 22, height: 22, borderRadius: 6,
-                  background: 'rgba(167,139,250,0.15)',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'rgba(167,139,250,0.9)',
-                  flexShrink: 0,
-                }}>
-                  {agent.icon}
-                </span>
-                {loading ? 'Starting…' : agent.label}
-              </button>
-            ))}
+                  }}
+                >
+                  <span style={{
+                    width: 22, height: 22, borderRadius: 6,
+                    background: iconBg,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    color: iconColor,
+                    flexShrink: 0,
+                  }}>
+                    {agent.icon}
+                  </span>
+                  {loading ? 'Starting…' : agent.label}
+                </button>
+              )
+            })}
           </div>
         </div>
 
