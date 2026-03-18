@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 
-export type NodeType = 'terminal' | 'browser' | 'note' | 'files' | 'notion'
+export type NodeType = 'terminal' | 'browser' | 'note' | 'files' | 'notion' | 'claude'
 
 export interface NodeData {
   id: string
@@ -34,6 +34,7 @@ const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
   note: { width: 300, height: 200 },
   files: { width: 700, height: 480 },
   notion: { width: 900, height: 700 },
+  claude: { width: 700, height: 480 },
 }
 
 const DEFAULT_TITLES: Record<NodeType, string> = {
@@ -42,6 +43,7 @@ const DEFAULT_TITLES: Record<NodeType, string> = {
   note: 'Note',
   files: 'Files',
   notion: 'Notion',
+  claude: 'Claude',
 }
 
 export const useNodeStore = create<NodeStore>((set, get) => ({
