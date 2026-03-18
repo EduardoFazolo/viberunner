@@ -5,7 +5,8 @@ import { BaseNode } from '../../../renderer/src/components/BaseNode'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
 import { useSessionStore } from '../../../renderer/src/stores/sessionStore'
 import { useCanvasDrag } from '../../../renderer/src/hooks/useCanvasDrag'
-import { getPreparedNotionExternalDrag, primeNotionExternalDrag, createNotionNoteFromDrop } from '../utils/notionDrag'
+import { getPreparedNotionExternalDrag, primeNotionExternalDrag } from '../utils/notionDrag'
+import { NotionDropModal, NotionDropPayload } from './NotionDropModal'
 import { pasteIntoBrowser } from '../../../renderer/src/browserRegistry'
 import { zoomFitNode, zoomExit } from '../../../renderer/src/utils/zoomFocus'
 import {
@@ -290,6 +291,8 @@ export function NotionNode({ node }: Props): React.ReactElement {
   const [loading, setLoading] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
 
+  const [pendingDrop, setPendingDrop] = useState<NotionDropPayload | null>(null)
+
   // Drag data stored in a ref so the drop callback doesn't need to re-subscribe
   const dragDataRef = useRef<{ pageId: string; title: string } | null>(null)
   const [activeDragTitle, setActiveDragTitle] = useState('')
@@ -392,15 +395,9 @@ export function NotionNode({ node }: Props): React.ReactElement {
         }
       }
 
-      // Drop on canvas — create a note node
-      const chunk = prefetchedChunk.current
+      // Drop on canvas — show agent picker modal
       prefetchedChunk.current = null
-      await createNotionNoteFromDrop(
-        { partition, pageId, title },
-        clientX,
-        clientY,
-        chunk ?? undefined,
-      )
+      setPendingDrop({ title, pageId, partition, clientX, clientY })
     }, [partition]),
   })
 
@@ -800,6 +797,12 @@ export function NotionNode({ node }: Props): React.ReactElement {
         </div>
       </div>,
       document.body
+    )}
+    {pendingDrop && (
+      <NotionDropModal
+        payload={pendingDrop}
+        onClose={() => setPendingDrop(null)}
+      />
     )}
     </>
   )
