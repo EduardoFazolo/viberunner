@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, WebContents } from 'electron'
+import { app, BrowserWindow, ipcMain, session, WebContents } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { setupPtyHandlers, killAllPtys, cleanupOrphanSessions } from './pty'
@@ -6,6 +6,7 @@ import { initDatabase, getAllNodeIds } from './database'
 import { setupWorkspaceHandlers } from './workspace'
 import { tmuxManager } from './tmux'
 import { setupBrowserSession } from './browserSession'
+import { registerNotionHandlers } from '../plugins/notion/main/handlers'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -42,6 +43,7 @@ function createWindow(): void {
     else if (mod && (input.key === '=' || input.key === '+')) { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomIn') }
     else if (mod && input.key === '-') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomOut') }
     else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
+    else if (mod && input.shift && input.key === 'C') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newClaude') }
 
   })
 
@@ -86,6 +88,7 @@ app.whenReady().then(async () => {
     console.error('[main] Database init failed, running without persistence:', err)
   }
   setupWorkspaceHandlers()
+  registerNotionHandlers(ipcMain)
 
   // Init tmux and clean up orphan sessions from deleted nodes
   await tmuxManager.init()

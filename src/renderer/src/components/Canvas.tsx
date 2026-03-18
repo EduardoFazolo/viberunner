@@ -6,7 +6,7 @@ import { GridRenderer } from './GridRenderer'
 import { CanvasOverlay } from './CanvasOverlay'
 import { NodeLayer } from './NodeLayer'
 import { CanvasContextMenu } from './CanvasContextMenu'
-import { createNotionNoteFromDrop, NotionCanvasDropPayload } from '../utils/notionDrag'
+import { createNotionNoteFromDrop, NotionCanvasDropPayload } from '../../../plugins/notion/utils/notionDrag'
 
 export function Canvas(): React.ReactElement {
   const { camera, pan, zoomAt } = useCameraStore()

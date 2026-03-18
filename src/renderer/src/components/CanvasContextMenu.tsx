@@ -7,6 +7,7 @@ import {
 } from './ui/context-menu'
 import { useCameraStore } from '../stores/cameraStore'
 import { fitAllNodes } from '../utils/canvasUtils'
+import { getActiveWorkspace } from '../stores/workspaceStore'
 
 interface Props {
   camera: Camera
@@ -38,6 +39,13 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
         </ContextMenuItem>
         <ContextMenuItem onClick={() => add('notion', clickWorldPos.current.x - 450, clickWorldPos.current.y - 350)}>
           New Notion
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => {
+          const cwd = getActiveWorkspace()?.path || ''
+          add('claude', clickWorldPos.current.x - 350, clickWorldPos.current.y - 240, { cwd })
+        }}>
+          <span style={{ flex: 1 }}>New Claude</span>
+          <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘⇧C</span>
         </ContextMenuItem>
         <ContextMenuItem onClick={() => add('note', clickWorldPos.current.x - 150, clickWorldPos.current.y - 100)}>
           <span style={{ flex: 1 }}>New Note</span>

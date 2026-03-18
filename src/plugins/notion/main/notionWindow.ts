@@ -1,5 +1,5 @@
 import { BrowserWindow, WebContentsView, Rectangle, View, session } from 'electron'
-import { CHROME_UA, setupBrowserSession } from './browserAuth'
+import { CHROME_UA, setupBrowserSession } from '../../../main/browserAuth'
 
 interface NotionWindowState {
   open: boolean

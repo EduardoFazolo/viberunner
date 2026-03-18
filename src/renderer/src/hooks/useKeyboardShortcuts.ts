@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { fitAllNodes } from '../utils/canvasUtils'
+import { getActiveWorkspace } from '../stores/workspaceStore'
 
 interface Options {
   onSearch: () => void
@@ -37,6 +38,16 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
           const wx = (vw - camera.x) / camera.zoom
           const wy = (vh - camera.y) / camera.zoom
           useNodeStore.getState().add('files', wx - 350, wy - 240)
+          break
+        }
+        case 'newClaude': {
+          const camera = useCameraStore.getState().camera
+          const vw = document.documentElement.clientWidth / 2
+          const vh = document.documentElement.clientHeight / 2
+          const wx = (vw - camera.x) / camera.zoom
+          const wy = (vh - camera.y) / camera.zoom
+          const cwd = getActiveWorkspace()?.path || ''
+          useNodeStore.getState().add('claude', wx - 350, wy - 240, { cwd })
           break
         }
         case 'fitAll':
