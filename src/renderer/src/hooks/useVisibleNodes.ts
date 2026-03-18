@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Camera } from '../stores/cameraStore'
 import { NodeData } from '../stores/nodeStore'
+import { pluginRegistry } from '../../../plugins/types'
 
 const CULL_PADDING = 200 // world-space px padding to prevent pop-in
 
@@ -17,8 +18,11 @@ export function useVisibleNodes(nodes: Map<string, NodeData>, camera: Camera): N
     const bottom = (vh - y) / zoom + CULL_PADDING
 
     return Array.from(nodes.values()).filter((node) => {
+      // Never cull terminal nodes or keepAlive plugins — they own live processes
+      if (node.type === 'terminal') return true
+      if (pluginRegistry.get(node.type)?.keepAlive) return true
+
       if (node.minimized) {
-        // minimized nodes are just title bars (~40px tall), always show if near viewport
         return node.x < right && node.x + node.width > left && node.y < bottom && node.y + 40 > top
       }
       return (

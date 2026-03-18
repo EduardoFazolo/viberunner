@@ -7,6 +7,7 @@ export const claudePlugin: CanvaFlowPlugin = {
   defaultSize: { width: 700, height: 480 },
   defaultTitle: 'Claude',
   component: ClaudeNode,
+  keepAlive: true,
   sidebarLabel: 'Claude',
   shortcut: 'Meta+Shift+C',
 }

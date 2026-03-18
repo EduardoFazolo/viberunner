@@ -59,6 +59,13 @@ export interface CanvaFlowPlugin {
    */
   readonly component: React.ComponentType<{ node: NodeData }>
 
+  /**
+   * If true, this node is never culled from the DOM when scrolled off-screen.
+   * Use for nodes that own a live background process (terminal, Claude, etc.)
+   * that must not be unmounted while the canvas is panned or zoomed.
+   */
+  readonly keepAlive?: boolean
+
   /** Label shown in the command palette / sidebar "new node" list. */
   readonly sidebarLabel?: string
 
