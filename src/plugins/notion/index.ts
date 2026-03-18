@@ -17,5 +17,6 @@ export const notionPlugin: CanvaFlowPlugin = {
   defaultSize: { width: 900, height: 700 },
   defaultTitle: 'Notion',
   component: NotionNode,
+  keepAlive: true,
   sidebarLabel: 'Notion',
 }

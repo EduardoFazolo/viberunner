@@ -18,8 +18,9 @@ export function useVisibleNodes(nodes: Map<string, NodeData>, camera: Camera): N
     const bottom = (vh - y) / zoom + CULL_PADDING
 
     return Array.from(nodes.values()).filter((node) => {
-      // Never cull terminal nodes or keepAlive plugins — they own live processes
+      // Never cull nodes that own live processes or webviews
       if (node.type === 'terminal') return true
+      if (node.type === 'browser') return true
       if (pluginRegistry.get(node.type)?.keepAlive) return true
 
       if (node.minimized) {
