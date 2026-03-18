@@ -9,6 +9,7 @@ import { useNodeStore } from '../stores/nodeStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { registerTerminal, unregisterTerminal } from '../terminalRegistry'
 import { useSettingsStore } from '../stores/settingsStore'
+import { normalizeClientPointForElement } from '../utils/terminalMouse'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -17,6 +18,76 @@ import '@xterm/xterm/css/xterm.css'
 
 interface Props {
   node: NodeData
+}
+
+type XtermMouseServiceLike = {
+  getCoords?: (...args: any[]) => any
+  getMouseReportCoords?: (...args: any[]) => any
+}
+
+type XtermSelectionServiceLike = {
+  _getMouseEventScrollAmount?: (...args: any[]) => any
+}
+
+function patchXtermMouseCoordinates(term: Terminal): () => void {
+  // xterm expects pointer coordinates in the terminal's unscaled layout space.
+  // Our canvas zoom is a CSS transform, so we normalize mouse input before
+  // xterm converts it into cell coordinates for selection and mouse reporting.
+  const core = (term as any)?._core as {
+    _mouseService?: XtermMouseServiceLike
+    _selectionService?: XtermSelectionServiceLike
+    screenElement?: HTMLElement
+  } | undefined
+
+  const mouseService = core?._mouseService
+  if (!mouseService) return () => {}
+
+  const originalGetCoords = mouseService.getCoords?.bind(mouseService)
+  const originalGetMouseReportCoords = mouseService.getMouseReportCoords?.bind(mouseService)
+  const selectionService = core?._selectionService
+  const originalGetMouseEventScrollAmount =
+    selectionService?._getMouseEventScrollAmount?.bind(selectionService)
+
+  if (originalGetCoords) {
+    mouseService.getCoords = (
+      event: { clientX: number; clientY: number },
+      element: HTMLElement,
+      colCount: number,
+      rowCount: number,
+      isSelection?: boolean,
+    ) => originalGetCoords(
+      normalizeClientPointForElement(event, element),
+      element,
+      colCount,
+      rowCount,
+      isSelection,
+    )
+  }
+
+  if (originalGetMouseReportCoords) {
+    mouseService.getMouseReportCoords = (
+      event: MouseEvent,
+      element: HTMLElement,
+    ) => originalGetMouseReportCoords(
+      normalizeClientPointForElement(event, element),
+      element,
+    )
+  }
+
+  if (selectionService && originalGetMouseEventScrollAmount && core?.screenElement) {
+    selectionService._getMouseEventScrollAmount = (event: MouseEvent) =>
+      originalGetMouseEventScrollAmount(
+        normalizeClientPointForElement(event, core.screenElement!),
+      )
+  }
+
+  return () => {
+    if (originalGetCoords) mouseService.getCoords = originalGetCoords
+    if (originalGetMouseReportCoords) mouseService.getMouseReportCoords = originalGetMouseReportCoords
+    if (selectionService && originalGetMouseEventScrollAmount) {
+      selectionService._getMouseEventScrollAmount = originalGetMouseEventScrollAmount
+    }
+  }
 }
 
 export function TerminalNode({ node }: Props): React.ReactElement {
@@ -88,6 +159,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     }
 
     term.open(termRef.current)
+    const restoreMousePatch = patchXtermMouseCoordinates(term)
     fitAddon.fit()
     loadRenderer()
 
@@ -181,6 +253,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       if (saveTimerRef.current) clearInterval(saveTimerRef.current)
 
       unsub()
+      restoreMousePatch()
       term.dispose()
 
       // Kill the tmux session only if the node was explicitly deleted
