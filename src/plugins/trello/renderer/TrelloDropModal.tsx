@@ -14,6 +14,7 @@ export interface TrelloDropPayload {
   prefetchedCard: TrelloCard | null
   apiKey: string
   token: string
+  partition: string
 }
 
 function titleToBranchName(title: string): string {
@@ -60,7 +61,7 @@ interface Props {
 }
 
 export function TrelloDropModal({ payload, onClose }: Props): React.ReactElement {
-  const { cardId, title, clientX, clientY, prefetchedCard, apiKey, token } = payload
+  const { cardId, title, clientX, clientY, prefetchedCard, apiKey, token, partition } = payload
 
   const [autoBranch, setAutoBranch] = useState(false)
   const branchName = titleToBranchName(title)
@@ -85,7 +86,7 @@ export function TrelloDropModal({ payload, onClose }: Props): React.ReactElement
     if (agentId === 'note') {
       setLoading(true)
       try {
-        await createTrelloNoteFromDrop({ cardId, title }, clientX, clientY, prefetchedCard, apiKey, token)
+        await createTrelloNoteFromDrop({ cardId, title }, clientX, clientY, prefetchedCard, apiKey, token, partition)
         onClose()
       } catch (e) {
         console.error('[TrelloDropModal] note error:', e)
@@ -113,6 +114,11 @@ export function TrelloDropModal({ payload, onClose }: Props): React.ReactElement
           const result = await primeTrelloExport(apiKey, token, cardId)
           text = result.text
         } catch {}
+      } else {
+        try {
+          const card = await window.trello.fetchCardWithSession(partition, cardId)
+          if (card.desc) text = `${card.name}\n\n${card.desc}`
+        } catch {}
       }
 
       const canvasEl = document.querySelector('[data-canvas-root]')
@@ -134,7 +140,7 @@ export function TrelloDropModal({ payload, onClose }: Props): React.ReactElement
     } finally {
       setLoading(false)
     }
-  }, [autoBranch, branchBlocked, branchName, cardId, clientX, clientY, prefetchedCard, apiKey, token, title, workspace?.path, onClose])
+  }, [autoBranch, branchBlocked, branchName, cardId, clientX, clientY, prefetchedCard, apiKey, token, partition, title, workspace?.path, onClose])
 
   const canToggleBranch = !branchBlocked
 

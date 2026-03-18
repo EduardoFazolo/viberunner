@@ -122,6 +122,20 @@ declare global {
         }>
         due: string | null
       }>
+      fetchCardWithSession: (partition: string, cardId: string) => Promise<{
+        id: string
+        name: string
+        desc: string
+        shortLink: string
+        url: string
+        labels: Array<{ id: string; name: string; color: string }>
+        checklists: Array<{
+          id: string
+          name: string
+          checkItems: Array<{ id: string; name: string; state: 'complete' | 'incomplete' }>
+        }>
+        due: string | null
+      }>
       prepareExport: (apiKey: string, token: string, cardId: string) => Promise<{ text: string; markdown: string }>
     }
 

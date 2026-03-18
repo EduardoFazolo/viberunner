@@ -441,7 +441,7 @@ export function TrelloNode({ node }: Props): React.ReactElement {
       // Drop on canvas — show agent picker modal
       const card = prefetchedCard.current
       prefetchedCard.current = null
-      setPendingDrop({ cardId, title, clientX, clientY, prefetchedCard: card, apiKey, token })
+      setPendingDrop({ cardId, title, clientX, clientY, prefetchedCard: card, apiKey, token, partition })
     }, [apiKey, token]),
   })
 
@@ -548,12 +548,16 @@ export function TrelloNode({ node }: Props): React.ReactElement {
         const initX = (wvRect && viewportWidth) ? wvRect.left + (x / viewportWidth) * wvRect.width : undefined
         const initY = (wvRect && viewportHeight) ? wvRect.top + (y / viewportHeight) * wvRect.height : undefined
         startDrag(initX, initY)
-        // Prefetch card content fire-and-forget (only if credentials available)
+        // Prefetch card content fire-and-forget
         if (apiKey && token) {
           window.trello.fetchCard(apiKey, token, cardId)
             .then((card) => { prefetchedCard.current = card })
             .catch(() => {})
           void primeTrelloExport(apiKey, token, cardId).catch(() => {})
+        } else {
+          window.trello.fetchCardWithSession(partition, cardId)
+            .then((card) => { prefetchedCard.current = card })
+            .catch(() => {})
         }
       } else if (channel === 'trello:drag-move') {
         const { x, y } = args[0]

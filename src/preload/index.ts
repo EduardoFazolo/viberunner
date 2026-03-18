@@ -151,6 +151,8 @@ contextBridge.exposeInMainWorld('app', {
 contextBridge.exposeInMainWorld('trello', {
   fetchCard: (apiKey: string, token: string, cardId: string): Promise<TrelloCard> =>
     ipcRenderer.invoke('trello:fetchCard', apiKey, token, cardId),
+  fetchCardWithSession: (partition: string, cardId: string): Promise<TrelloCard> =>
+    ipcRenderer.invoke('trello:fetchCardWithSession', partition, cardId),
   prepareExport: (apiKey: string, token: string, cardId: string): Promise<{ text: string; markdown: string }> =>
     ipcRenderer.invoke('trello:prepareExport', apiKey, token, cardId),
 })

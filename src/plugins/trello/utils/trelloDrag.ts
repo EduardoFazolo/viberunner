@@ -47,6 +47,7 @@ export async function createTrelloNoteFromDrop(
   prefetchedCard?: TrelloCard | null,
   apiKey?: string,
   token?: string,
+  partition?: string,
 ): Promise<void> {
   const canvasEl = document.querySelector('[data-canvas-root]')
   const canvasRect = canvasEl?.getBoundingClientRect()
@@ -67,7 +68,25 @@ export async function createTrelloNoteFromDrop(
     if (!card && apiKey && token) {
       card = await window.trello.fetchCard(apiKey, token, payload.cardId)
     }
-    if (!card) return
+    if (!card && partition) {
+      card = await window.trello.fetchCardWithSession(partition, payload.cardId)
+    }
+    if (!card) {
+      const current = useNodeStore.getState().nodes.get(newNode.id)
+      if (!current) return
+      useNodeStore.getState().update(newNode.id, {
+        props: {
+          ...current.props,
+          content: {
+            type: 'doc',
+            content: [
+              { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: payload.title }] },
+            ],
+          },
+        },
+      })
+      return
+    }
 
     const tiptap = trelloCardToTiptap(card)
     const current = useNodeStore.getState().nodes.get(newNode.id)
