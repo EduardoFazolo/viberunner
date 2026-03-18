@@ -19,7 +19,8 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
           const vh = document.documentElement.clientHeight / 2
           const wx = (vw - camera.x) / camera.zoom
           const wy = (vh - camera.y) / camera.zoom
-          useNodeStore.getState().add('terminal', wx - 300, wy - 200)
+          const cwd = getActiveWorkspace()?.path || ''
+          useNodeStore.getState().add('terminal', wx - 300, wy - 200, { cwd })
           break
         }
         case 'newBrowser': {

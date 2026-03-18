@@ -29,7 +29,10 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onClick={() => add('terminal', clickWorldPos.current.x - 300, clickWorldPos.current.y - 200)}>
+        <ContextMenuItem onClick={() => {
+          const cwd = getActiveWorkspace()?.path || ''
+          add('terminal', clickWorldPos.current.x - 300, clickWorldPos.current.y - 200, { cwd })
+        }}>
           <span style={{ flex: 1 }}>New Terminal</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘T</span>
         </ContextMenuItem>
