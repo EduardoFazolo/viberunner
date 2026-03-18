@@ -127,6 +127,9 @@ declare global {
       commit: (rootPath: string, message: string) => Promise<void>
       log: (rootPath: string, maxCount?: number) => Promise<Array<{ hash: string; date: string; message: string; author: string }>>
       logGraph: (rootPath: string, maxCount?: number) => Promise<Array<{ hash: string; fullHash: string; parents: string[]; author: string; subject: string; refs: string }>>
+      discard: (rootPath: string, filePaths: string[]) => Promise<void>
+      branches: (rootPath: string) => Promise<Array<{ name: string; author: string; subject: string; timeAgo: string; isCurrent: boolean }>>
+      checkoutBranch: (rootPath: string, name: string, createNew: boolean) => Promise<void>
     }
 
     fs: {

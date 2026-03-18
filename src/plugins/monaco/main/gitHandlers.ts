@@ -1,3 +1,5 @@
+import { unlink } from 'fs/promises'
+import { join } from 'path'
 import simpleGit from 'simple-git'
 import type { IpcMainLike } from '../../types'
 
@@ -50,6 +52,58 @@ export function registerGitHandlers(ipc: IpcMainLike): void {
 
   ipc.handle('git:commit', async (_e, rootPath: string, message: string): Promise<void> => {
     await git(rootPath).commit(message)
+  })
+
+  ipc.handle('git:branches', async (_e, rootPath: string) => {
+    try {
+      const status = await git(rootPath).status()
+      const current = status.current || ''
+      const output = await git(rootPath).raw([
+        'for-each-ref', '--sort=-committerdate',
+        '--format=%(refname:short)\t%(authorname)\t%(subject)\t%(committerdate:relative)',
+        'refs/heads',
+      ])
+      if (!output.trim()) return []
+      return output.trim().split('\n').map(line => {
+        const parts = line.split('\t')
+        const name = parts[0]?.trim() ?? ''
+        return {
+          name,
+          author: parts[1]?.trim() ?? '',
+          subject: parts[2]?.trim() ?? '',
+          timeAgo: parts[3]?.trim() ?? '',
+          isCurrent: name === current,
+        }
+      }).filter(b => b.name)
+    } catch (e) {
+      console.error('[git:branches]', e)
+      return []
+    }
+  })
+
+  ipc.handle('git:checkoutBranch', async (_e, rootPath: string, name: string, createNew: boolean) => {
+    const g = git(rootPath)
+    if (createNew) {
+      await g.checkoutLocalBranch(name)
+    } else {
+      await g.checkout(name)
+    }
+  })
+
+  ipc.handle('git:discard', async (_e, rootPath: string, filePaths: string[]): Promise<void> => {
+    const g = git(rootPath)
+    const s = await g.status()
+    for (const fp of filePaths) {
+      const f = s.files.find(sf => sf.path === fp)
+      if (!f) continue
+      if (f.working_dir === '?' || f.index === '?') {
+        // Untracked file — delete it
+        try { await unlink(join(rootPath, fp)) } catch { /* already gone */ }
+      } else {
+        // Tracked — restore working tree
+        try { await g.checkout(['--', fp]) } catch (e) { console.error('[git:discard]', e) }
+      }
+    }
   })
 
   ipc.handle('git:log', async (_e, rootPath: string, maxCount = 50) => {

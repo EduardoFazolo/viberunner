@@ -7,6 +7,7 @@ import { getActiveWorkspace } from '../../../renderer/src/stores/workspaceStore'
 import { initTextMate } from './textmateSetup'
 import { GitPanel } from './GitPanel'
 import { SearchOverlay } from './SearchOverlay'
+import { BranchPicker } from './BranchPicker'
 
 interface Props {
   node: NodeData
@@ -540,7 +541,11 @@ export function MonacoNode({ node }: Props): React.ReactElement {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('files')
   const [diffState, setDiffState] = useState<DiffState>(null)
   const [showSearch, setShowSearch] = useState(false)
-  const [gitStatus, setGitStatus] = useState<{ files: Array<{ path: string; index: string; working: string }> } | null>(null)
+  const [gitStatus, setGitStatus] = useState<{ branch: string; files: Array<{ path: string; index: string; working: string }> } | null>(null)
+  const [showBranchPicker, setShowBranchPicker] = useState(false)
+  const [panelW, setPanelW] = useState(PANEL_W)
+  const sidebarDragging = useRef(false)
+  const sidebarDragStart = useRef({ x: 0, w: 0 })
 
   const activeTab = tabs.find(t => t.path === activeTabPath) ?? null
 
@@ -599,7 +604,7 @@ export function MonacoNode({ node }: Props): React.ReactElement {
   useEffect(() => {
     if (!rootPath) return
     window.git.isRepo(rootPath).then(isRepo => {
-      if (isRepo) window.git.status(rootPath).then(setGitStatus).catch(() => {})
+      if (isRepo) window.git.status(rootPath).then(s => setGitStatus({ branch: s.branch, files: s.files })).catch(() => {})
     }).catch(() => {})
   }, [rootPath])
 
@@ -679,6 +684,19 @@ export function MonacoNode({ node }: Props): React.ReactElement {
     }, 1500)
   }, [])
 
+  // Sidebar lateral resize
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!sidebarDragging.current) return
+      const delta = e.clientX - sidebarDragStart.current.x
+      setPanelW(Math.max(120, sidebarDragStart.current.w + delta))
+    }
+    const onUp = () => { sidebarDragging.current = false }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+  }, [])
+
   // Cmd+P outside Monaco editor (when editor doesn't have focus)
   const onContainerKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.metaKey && e.key === 'p') { e.preventDefault(); e.stopPropagation(); setShowSearch(true) }
@@ -689,12 +707,14 @@ export function MonacoNode({ node }: Props): React.ReactElement {
   return (
     <BaseNode node={node}>
       <div
-        style={{ display: 'flex', height: '100%', overflow: 'hidden', background: '#1e1e1e', position: 'relative' }}
+        style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: '#1e1e1e', position: 'relative' }}
         onKeyDown={onContainerKeyDown}
       >
+        {/* Main content row: sidebar + editor */}
+        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
 
         {/* Sidebar: icon rail + panel */}
-        <div style={{ width: SIDEBAR_W, flexShrink: 0, display: 'flex', borderRight: '1px solid #1e1e1e' }}>
+        <div style={{ width: RAIL_W + panelW, flexShrink: 0, display: 'flex', position: 'relative' }}>
 
           {/* Icon rail */}
           <div style={{ width: RAIL_W, display: 'flex', flexDirection: 'column', background: '#333333', borderRight: '1px solid #1e1e1e', flexShrink: 0 }}>
@@ -703,7 +723,7 @@ export function MonacoNode({ node }: Props): React.ReactElement {
           </div>
 
           {/* Panel content */}
-          <div style={{ width: PANEL_W, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ width: panelW, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {sidebarTab === 'files' && (
               <FileTree
                 rootPath={rootPath}
@@ -721,6 +741,23 @@ export function MonacoNode({ node }: Props): React.ReactElement {
               />
             )}
           </div>
+
+          {/* Lateral resize handle */}
+          <div
+            onMouseDown={e => {
+              sidebarDragging.current = true
+              sidebarDragStart.current = { x: e.clientX, w: panelW }
+              e.preventDefault()
+            }}
+            style={{
+              position: 'absolute', right: 0, top: 0, bottom: 0,
+              width: 4, cursor: 'ew-resize',
+              background: 'transparent',
+              borderRight: '1px solid #1e1e1e',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#3c3c3c' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+          />
         </div>
 
         {/* Editor area */}
@@ -784,32 +821,49 @@ export function MonacoNode({ node }: Props): React.ReactElement {
             )}
           </div>
 
-          {/* Status bar */}
-          {(activeTab || diffState) && (
-            <div
-              style={{ height: 22, display: 'flex', alignItems: 'center', paddingLeft: 12, paddingRight: 12, gap: 12, background: '#007acc', flexShrink: 0 }}
-              onPointerDown={e => e.stopPropagation()}
+        </div>
+
+        </div>{/* end main content row */}
+
+        {/* Status bar — full width, always visible */}
+        <div
+          style={{ height: 22, display: 'flex', alignItems: 'center', paddingLeft: 0, paddingRight: 12, gap: 0, background: '#007acc', flexShrink: 0 }}
+          onPointerDown={e => e.stopPropagation()}
+        >
+          {/* Branch button */}
+          {gitStatus && (
+            <button
+              onClick={() => setShowBranchPicker(v => !v)}
+              title="Switch branch"
+              style={{
+                height: '100%', display: 'flex', alignItems: 'center', gap: 5,
+                padding: '0 10px', background: showBranchPicker ? 'rgba(0,0,0,0.2)' : 'transparent',
+                border: 'none', cursor: 'pointer', color: '#fff',
+                fontSize: 11, fontFamily: 'system-ui',
+              }}
             >
-              {gitStatus && (
-                <span
-                  onClick={() => setSidebarTab('git')}
-                  style={{ fontSize: 11, fontFamily: 'system-ui', color: '#fff', opacity: 0.9, cursor: 'pointer' }}
-                  title="Source Control"
-                >
-                  ⎇ {gitStatus.files.length > 0 ? gitStatus.files.length + ' changes' : 'clean'}
-                </span>
-              )}
-              <span style={{ flex: 1 }} />
-              <span style={{ fontSize: 11, fontFamily: 'system-ui', color: '#fff', opacity: 0.9 }}>
+              <span style={{ fontSize: 13, lineHeight: 1 }}>⎇</span>
+              <span>{gitStatus.branch || 'HEAD'}</span>
+            </button>
+          )}
+          {/* Directory name */}
+          <span style={{ fontSize: 11, fontFamily: 'system-ui', color: 'rgba(255,255,255,0.75)', paddingLeft: gitStatus ? 4 : 12 }}>
+            {rootName}
+          </span>
+          <span style={{ flex: 1 }} />
+          {/* Right side: lang, cursor, encoding */}
+          {(activeTab || diffState) && (
+            <>
+              <span style={{ fontSize: 11, fontFamily: 'system-ui', color: 'rgba(255,255,255,0.85)', marginRight: 12 }}>
                 {diffState ? diffState.lang : activeTab?.lang}
               </span>
               {!diffState && (
-                <span style={{ fontSize: 11, fontFamily: 'system-ui', color: '#fff', opacity: 0.9 }}>
+                <span style={{ fontSize: 11, fontFamily: 'system-ui', color: 'rgba(255,255,255,0.85)', marginRight: 12 }}>
                   Ln {cursorPos.line}, Col {cursorPos.col}
                 </span>
               )}
-              <span style={{ fontSize: 11, fontFamily: 'system-ui', color: '#fff', opacity: 0.9 }}>UTF-8</span>
-            </div>
+              <span style={{ fontSize: 11, fontFamily: 'system-ui', color: 'rgba(255,255,255,0.85)' }}>UTF-8</span>
+            </>
           )}
         </div>
 
@@ -819,6 +873,19 @@ export function MonacoNode({ node }: Props): React.ReactElement {
             rootPath={rootPath}
             onSelect={openFile}
             onClose={() => setShowSearch(false)}
+          />
+        )}
+
+        {/* Branch picker */}
+        {showBranchPicker && gitStatus && (
+          <BranchPicker
+            rootPath={rootPath}
+            currentBranch={gitStatus.branch}
+            onClose={() => setShowBranchPicker(false)}
+            onCheckedOut={branch => {
+              setGitStatus(s => s ? { ...s, branch } : s)
+              setShowBranchPicker(false)
+            }}
           />
         )}
       </div>

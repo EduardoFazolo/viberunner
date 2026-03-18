@@ -107,6 +107,12 @@ contextBridge.exposeInMainWorld('git', {
     ipcRenderer.invoke('git:log', rootPath, maxCount),
   logGraph: (rootPath: string, maxCount?: number): Promise<GitGraphEntry[]> =>
     ipcRenderer.invoke('git:logGraph', rootPath, maxCount),
+  discard: (rootPath: string, filePaths: string[]): Promise<void> =>
+    ipcRenderer.invoke('git:discard', rootPath, filePaths),
+  branches: (rootPath: string): Promise<GitBranchEntry[]> =>
+    ipcRenderer.invoke('git:branches', rootPath),
+  checkoutBranch: (rootPath: string, name: string, createNew: boolean): Promise<void> =>
+    ipcRenderer.invoke('git:checkoutBranch', rootPath, name, createNew),
 })
 
 contextBridge.exposeInMainWorld('fs', {
@@ -242,6 +248,14 @@ export interface GitLogEntry {
   date: string
   message: string
   author: string
+}
+
+export interface GitBranchEntry {
+  name: string
+  author: string
+  subject: string
+  timeAgo: string
+  isCurrent: boolean
 }
 
 export interface GitGraphEntry {

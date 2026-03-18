@@ -391,9 +391,12 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
   const [changesOpen, setChangesOpen] = useState(true)
   const [graphOpen, setGraphOpen] = useState(true)
   const [graphCommits, setGraphCommits] = useState<GraphCommit[]>([])
+  const [splitHeight, setSplitHeight] = useState(200)
 
   const changesScrollRef = useRef<HTMLDivElement>(null)
   const graphScrollRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
+  const dragStart = useRef({ y: 0, h: 0 })
 
   // Stop wheel events bubbling out of scroll areas
   useEffect(() => {
@@ -402,6 +405,25 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
     els.forEach(el => el?.addEventListener('wheel', stop, { passive: true }))
     return () => els.forEach(el => el?.removeEventListener('wheel', stop))
   }, [])
+
+  // Resize drag
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return
+      const delta = e.clientY - dragStart.current.y
+      setSplitHeight(Math.max(95, dragStart.current.h + delta))
+    }
+    const onUp = () => { dragging.current = false }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
+  }, [])
+
+  const onDragHandleDown = useCallback((e: React.MouseEvent) => {
+    dragging.current = true
+    dragStart.current = { y: e.clientY, h: splitHeight }
+    e.preventDefault()
+  }, [splitHeight])
 
   const refresh = useCallback(async () => {
     if (!rootPath) return
@@ -455,6 +477,13 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
   const unstageFile = useCallback(async (e: React.MouseEvent, filePath: string) => {
     e.stopPropagation()
     await window.git.unstage(rootPath, [filePath])
+    refresh()
+  }, [rootPath, refresh])
+
+  const discardFile = useCallback(async (e: React.MouseEvent, filePath: string) => {
+    e.stopPropagation()
+    if (!confirm(`Discard changes to ${filePath.split('/').pop()}?`)) return
+    await window.git.discard(rootPath, [filePath])
     refresh()
   }, [rootPath, refresh])
 
@@ -519,8 +548,8 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
       </SectionHeader>
 
       {changesOpen && (
-        <>
-          {/* Commit box always visible */}
+        <div style={{ height: splitHeight, display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+          {/* Commit box */}
           <div style={{ flexShrink: 0, padding: '6px 8px', borderBottom: '1px solid #1e1e1e', display: 'flex', flexDirection: 'column', gap: 5 }}>
             <textarea
               value={commitMsg}
@@ -552,11 +581,8 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
             </button>
           </div>
 
-          {/* File lists */}
-          <div
-            ref={changesScrollRef}
-            style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', flexShrink: 0, borderBottom: '1px solid #1e1e1e' }}
-          >
+          {/* File lists — scrollable, fills remaining split height */}
+          <div ref={changesScrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
             {staged.length > 0 && (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', height: 22, paddingLeft: 12, paddingRight: 8, background: '#252526' }}>
@@ -591,7 +617,12 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
                 {unstaged.map(f => (
                   <FileRow key={`u-${f.path}`} file={f} selected={selectedFile === f.path}
                     onClick={() => openFile(f)}
-                    action={<ActionBtn label="+" title="Stage" onClick={e => stageFile(e, f.path)} />}
+                    action={
+                      <>
+                        <ActionBtn label="↺" title="Discard changes" onClick={e => discardFile(e, f.path)} />
+                        <ActionBtn label="+" title="Stage" onClick={e => stageFile(e, f.path)} />
+                      </>
+                    }
                   />
                 ))}
               </>
@@ -603,7 +634,20 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
               </div>
             )}
           </div>
-        </>
+        </div>
+      )}
+
+      {/* ── Resize handle (only when both open) ───────────────────── */}
+      {changesOpen && graphOpen && (
+        <div
+          onMouseDown={onDragHandleDown}
+          style={{
+            height: 5, background: '#1e1e1e', cursor: 'ns-resize',
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{ width: 28, height: 2, background: '#3c3c3c', borderRadius: 1 }} />
+        </div>
       )}
 
       {/* ── GRAPH section ─────────────────────────────────────────── */}
