@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 
-export type NodeType = 'terminal' | 'browser' | 'note' | 'files' | 'notion' | 'claude' | 'monaco'
+export type NodeType = 'terminal' | 'browser' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco'
 
 export interface NodeData {
   id: string
@@ -34,6 +34,7 @@ const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
   note: { width: 300, height: 200 },
   files: { width: 700, height: 480 },
   notion: { width: 900, height: 700 },
+  trello: { width: 900, height: 700 },
   claude: { width: 700, height: 480 },
   monaco: { width: 1000, height: 640 },
 }
@@ -44,6 +45,7 @@ const DEFAULT_TITLES: Record<NodeType, string> = {
   note: 'Note',
   files: 'Files',
   notion: 'Notion',
+  trello: 'Trello',
   claude: 'Claude',
   monaco: 'Untitled',
 }

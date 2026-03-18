@@ -43,6 +43,9 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
         <ContextMenuItem onClick={() => add('notion', clickWorldPos.current.x - 450, clickWorldPos.current.y - 350)}>
           New Notion
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => add('trello', clickWorldPos.current.x - 450, clickWorldPos.current.y - 350)}>
+          New Trello
+        </ContextMenuItem>
         <ContextMenuItem onClick={() => {
           const cwd = getActiveWorkspace()?.path || ''
           add('claude', clickWorldPos.current.x - 350, clickWorldPos.current.y - 240, { cwd })

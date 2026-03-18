@@ -7,6 +7,7 @@ import { setupWorkspaceHandlers } from './workspace'
 import { tmuxManager } from './tmux'
 import { setupBrowserSession } from './browserSession'
 import { registerNotionHandlers } from '../plugins/notion/main/handlers'
+import { registerTrelloHandlers } from '../plugins/trello/main/handlers'
 import { registerGitHandlers } from '../plugins/monaco/main/gitHandlers'
 
 let mainWindow: BrowserWindow | null = null
@@ -91,6 +92,7 @@ app.whenReady().then(async () => {
   }
   setupWorkspaceHandlers()
   registerNotionHandlers(ipcMain)
+  registerTrelloHandlers(ipcMain)
   registerGitHandlers(ipcMain)
 
   // Init tmux and clean up orphan sessions from deleted nodes

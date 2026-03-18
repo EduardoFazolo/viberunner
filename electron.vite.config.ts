@@ -20,6 +20,7 @@ export default defineConfig({
           index: 'src/preload/index.ts',
           notionWebview: 'src/plugins/notion/preload/notionWebview.ts',
           canvasWebview: 'src/plugins/browser/preload/canvasWebview.ts',
+          trelloWebview: 'src/plugins/trello/preload/trelloWebview.ts',
         }
       }
     }

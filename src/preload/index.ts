@@ -140,10 +140,19 @@ contextBridge.exposeInMainWorld('app', {
   },
   notionPreloadPath: (): Promise<string> =>
     ipcRenderer.invoke('app:notionPreloadPath'),
+  trelloPreloadPath: (): Promise<string> =>
+    ipcRenderer.invoke('app:trelloPreloadPath'),
   canvasWebviewPreloadPath: (): Promise<string> =>
     ipcRenderer.invoke('app:canvasWebviewPreloadPath'),
   getCursorPos: (): Promise<{ x: number; y: number }> =>
     ipcRenderer.invoke('app:getCursorPos'),
+})
+
+contextBridge.exposeInMainWorld('trello', {
+  fetchCard: (apiKey: string, token: string, cardId: string): Promise<TrelloCard> =>
+    ipcRenderer.invoke('trello:fetchCard', apiKey, token, cardId),
+  prepareExport: (apiKey: string, token: string, cardId: string): Promise<{ text: string; markdown: string }> =>
+    ipcRenderer.invoke('trello:prepareExport', apiKey, token, cardId),
 })
 
 contextBridge.exposeInMainWorld('notion', {
@@ -201,6 +210,21 @@ export interface BrowserSessionRow {
   id: string
   name: string
   createdAt: number
+}
+
+export interface TrelloCard {
+  id: string
+  name: string
+  desc: string
+  shortLink: string
+  url: string
+  labels: Array<{ id: string; name: string; color: string }>
+  checklists: Array<{
+    id: string
+    name: string
+    checkItems: Array<{ id: string; name: string; state: 'complete' | 'incomplete' }>
+  }>
+  due: string | null
 }
 
 export interface NotionPageChunk {
