@@ -116,6 +116,8 @@ contextBridge.exposeInMainWorld('app', {
   },
   notionPreloadPath: (): Promise<string> =>
     ipcRenderer.invoke('app:notionPreloadPath'),
+  canvasWebviewPreloadPath: (): Promise<string> =>
+    ipcRenderer.invoke('app:canvasWebviewPreloadPath'),
   getCursorPos: (): Promise<{ x: number; y: number }> =>
     ipcRenderer.invoke('app:getCursorPos'),
 })

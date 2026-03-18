@@ -19,6 +19,7 @@ export default defineConfig({
         input: {
           index: 'src/preload/index.ts',
           notionWebview: 'src/plugins/notion/preload/notionWebview.ts',
+          canvasWebview: 'src/plugins/browser/preload/canvasWebview.ts',
         }
       }
     }

@@ -7,6 +7,7 @@ import { useSessionStore } from '../../../renderer/src/stores/sessionStore'
 import { useCanvasDrag } from '../../../renderer/src/hooks/useCanvasDrag'
 import { getPreparedNotionExternalDrag, primeNotionExternalDrag, createNotionNoteFromDrop } from '../utils/notionDrag'
 import { pasteIntoBrowser } from '../../../renderer/src/browserRegistry'
+import { zoomFitNode, zoomExit } from '../../../renderer/src/utils/zoomFocus'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -481,6 +482,14 @@ export function NotionNode({ node }: Props): React.ReactElement {
     // IPC messages from webview preload — intentionally synchronous, no awaits
     const onIpcMessage = (e: any) => {
       const { channel, args } = e
+      if (channel === 'canvas:double-tap') {
+        zoomFitNode(node.id)
+        return
+      }
+      if (channel === 'canvas:zoom-exit') {
+        zoomExit()
+        return
+      }
       if (channel === 'notion:drag-start') {
         const { pageId, title, x, y, viewportWidth, viewportHeight } = args[0]
         prevWebviewPos.current = { x, y }

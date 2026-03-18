@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useCameraStore, updateCursorPos, animateCameraTo } from '../stores/cameraStore'
+import { useCameraStore, updateCursorPos } from '../stores/cameraStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useNodeStore } from '../stores/nodeStore'
-import { computeFitCamera, getCanvasRect } from '../utils/canvasUtils'
+import { zoomFitNode, zoomExit } from '../utils/zoomFocus'
 import { GridRenderer } from './GridRenderer'
 import { CanvasOverlay } from './CanvasOverlay'
 import { NodeLayer } from './NodeLayer'
@@ -17,26 +17,23 @@ export function Canvas(): React.ReactElement {
   const spaceHeldRef = useRef(false)
   const [spaceHeld, setSpaceHeld] = useState(false)
 
-  // Double-tap anywhere on a node (including webview content) to zoom-fit it;
+  // Double-tap on a node (title bar / terminal content / any host-page area) to zoom-fit;
   // double-tap again to zoom back out.
-  // Uses world-coordinate hit testing so it works even when the click lands on a
-  // webview element that doesn't have data-node-id in its DOM ancestry.
+  // Webview content (browser, notion) is handled via preload IPC instead (see zoomFocus.ts).
   useEffect(() => {
-    type Camera = ReturnType<typeof useCameraStore.getState>['camera']
-    const state = { lastTapTime: 0, lastNodeId: null as string | null, prevCamera: null as Camera | null }
+    const tap = { lastTime: 0, lastNodeId: null as string | null }
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return
       const canvas = rootRef.current
       if (!canvas) return
 
-      // Convert screen → world coordinates
       const rect = canvas.getBoundingClientRect()
       const { camera } = useCameraStore.getState()
       const wx = (e.clientX - rect.left - camera.x) / camera.zoom
       const wy = (e.clientY - rect.top - camera.y) / camera.zoom
 
-      // Hit-test all nodes; highest zIndex wins
+      // Hit-test nodes; highest zIndex wins
       const nodes = useNodeStore.getState().nodes
       let hitNode = null
       let maxZ = -Infinity
@@ -49,22 +46,16 @@ export function Canvas(): React.ReactElement {
       if (!hitNode) return
 
       const now = Date.now()
-      const isDoubleTap = hitNode.id === state.lastNodeId && now - state.lastTapTime < 350
-      state.lastTapTime = isDoubleTap ? 0 : now
-      state.lastNodeId = hitNode.id
+      const isDoubleTap = hitNode.id === tap.lastNodeId && now - tap.lastTime < 350
+      tap.lastTime = isDoubleTap ? 0 : now
+      tap.lastNodeId = hitNode.id
       if (!isDoubleTap) return
 
-      if (state.prevCamera) {
-        animateCameraTo(state.prevCamera)
-        state.prevCamera = null
-        return
+      if (e.metaKey && e.shiftKey) {
+        zoomExit()
+      } else {
+        zoomFitNode(hitNode.id)
       }
-
-      const { width: vw, height: vh } = getCanvasRect()
-      const target = computeFitCamera(new Map([[hitNode.id, hitNode]]), vw, vh)
-      if (!target) return
-      state.prevCamera = camera
-      animateCameraTo(target)
     }
 
     document.addEventListener('pointerdown', onPointerDown, { capture: true })

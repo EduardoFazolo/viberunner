@@ -73,6 +73,7 @@ declare global {
     app: {
       onShortcut: (cb: (name: string) => void) => () => void
       notionPreloadPath: () => Promise<string>
+      canvasWebviewPreloadPath: () => Promise<string>
       getCursorPos: () => Promise<{ x: number; y: number }>
     }
 

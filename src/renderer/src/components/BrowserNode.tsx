@@ -4,6 +4,7 @@ import { BaseNode } from './BaseNode'
 import { useCameraStore } from '../stores/cameraStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { registerBrowserPaster, unregisterBrowserPaster } from '../browserRegistry'
+import { zoomFitNode, zoomExit } from '../utils/zoomFocus'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -18,6 +19,7 @@ declare global {
         allowpopups?: string
         nodeintegration?: string
         disablewebsecurity?: string
+        preload?: string
         ref?: React.Ref<HTMLElement>
       }
     }
@@ -300,6 +302,9 @@ export function BrowserNode({ node }: Props): React.ReactElement {
   // Tracks the current URL for use when the webview remounts (e.g. session change)
   const webviewSrcRef = useRef<string>((node.props.url as string) || 'https://google.com')
 
+  const [canvasPreloadPath, setCanvasPreloadPath] = useState<string | null>(null)
+  useEffect(() => { window.app.canvasWebviewPreloadPath().then(setCanvasPreloadPath) }, [])
+
   // Frozen on mount — changing this ref never re-navigates the webview
   const initialUrl = useRef<string>((node.props.url as string) || 'https://google.com')
 
@@ -473,6 +478,11 @@ export function BrowserNode({ node }: Props): React.ReactElement {
       }
     }
 
+    const onIpcMessage = (e: any) => {
+      if (e.channel === 'canvas:double-tap') zoomFitNode(node.id)
+      if (e.channel === 'canvas:zoom-exit') zoomExit()
+    }
+
     wv.addEventListener('did-start-loading', onStartLoading)
     wv.addEventListener('did-stop-loading', onStopLoading)
     wv.addEventListener('did-navigate', onNavigate)
@@ -480,6 +490,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
     wv.addEventListener('page-title-updated', onTitleUpdated)
     wv.addEventListener('did-fail-load', onFailLoad)
     wv.addEventListener('new-window', onNewWindow)
+    wv.addEventListener('ipc-message', onIpcMessage)
 
     return () => {
       wv.removeEventListener('did-start-loading', onStartLoading)
@@ -489,8 +500,9 @@ export function BrowserNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('page-title-updated', onTitleUpdated)
       wv.removeEventListener('did-fail-load', onFailLoad)
       wv.removeEventListener('new-window', onNewWindow)
+      wv.removeEventListener('ipc-message', onIpcMessage)
     }
-  }, [node.id, node.x, node.y, partition, update, add])
+  }, [node.id, node.x, node.y, partition, canvasPreloadPath, update, add])
 
 
   const handleBack = useCallback(() => {
@@ -734,14 +746,17 @@ export function BrowserNode({ node }: Props): React.ReactElement {
               }
             }}
           >
-            <webview
-              key={partition}
-              ref={webviewRef}
-              src={webviewSrcRef.current}
-              partition={partition}
-              allowpopups=""
-              style={{ width: '100%', height: '100%', display: 'flex' }}
-            />
+            {canvasPreloadPath && (
+              <webview
+                key={partition}
+                ref={webviewRef}
+                src={webviewSrcRef.current}
+                partition={partition}
+                allowpopups=""
+                preload={canvasPreloadPath}
+                style={{ width: '100%', height: '100%', display: 'flex' }}
+              />
+            )}
             {/* Thumbnail overlay — sits on top when zoomed out, webview stays alive underneath */}
             {isThumbnailMode && thumbnail && (
               <img

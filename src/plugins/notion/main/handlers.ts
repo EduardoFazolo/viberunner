@@ -146,8 +146,12 @@ export const fetchNotionImageDataUrl = async (
 
 export function registerNotionHandlers(ipc: IpcMainLike): void {
   ipc.handle('app:notionPreloadPath', () => {
-    // __dirname resolves to out/main/ at runtime — same as workspace.ts
     const filePath = path.join(__dirname, '../preload/notionWebview.js')
+    return `file://${filePath}`
+  })
+
+  ipc.handle('app:canvasWebviewPreloadPath', () => {
+    const filePath = path.join(__dirname, '../preload/canvasWebview.js')
     return `file://${filePath}`
   })
 
