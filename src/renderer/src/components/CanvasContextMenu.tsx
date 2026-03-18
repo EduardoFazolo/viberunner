@@ -47,6 +47,13 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
           <span style={{ flex: 1 }}>New Claude</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘⇧C</span>
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => {
+          const rootPath = getActiveWorkspace()?.path || ''
+          add('monaco', clickWorldPos.current.x - 500, clickWorldPos.current.y - 320, { rootPath })
+        }}>
+          <span style={{ flex: 1 }}>New Editor</span>
+          <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘⇧E</span>
+        </ContextMenuItem>
         <ContextMenuItem onClick={() => add('note', clickWorldPos.current.x - 150, clickWorldPos.current.y - 100)}>
           <span style={{ flex: 1 }}>New Note</span>
         </ContextMenuItem>

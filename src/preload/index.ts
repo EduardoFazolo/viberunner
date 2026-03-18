@@ -98,6 +98,12 @@ contextBridge.exposeInMainWorld('fs', {
   openFile: (filePath: string): Promise<void> =>
     ipcRenderer.invoke('fs:openFile', filePath),
 
+  readFile: (filePath: string): Promise<string> =>
+    ipcRenderer.invoke('fs:readFile', filePath),
+
+  writeFile: (filePath: string, content: string): Promise<void> =>
+    ipcRenderer.invoke('fs:writeFile', filePath, content),
+
   delete: (filePath: string): Promise<void> =>
     ipcRenderer.invoke('fs:delete', filePath),
 })

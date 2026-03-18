@@ -30,6 +30,7 @@
     "vitest": "^2.0.0"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/vite": "^4.2.1",
     "@tiptap/extension-image": "^3.20.4",
     "@tiptap/pm": "^3.20.4",

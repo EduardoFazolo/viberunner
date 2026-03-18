@@ -50,6 +50,16 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
           useNodeStore.getState().add('claude', wx - 350, wy - 240, { cwd })
           break
         }
+        case 'newEditor': {
+          const camera = useCameraStore.getState().camera
+          const vw = document.documentElement.clientWidth / 2
+          const vh = document.documentElement.clientHeight / 2
+          const wx = (vw - camera.x) / camera.zoom
+          const wy = (vh - camera.y) / camera.zoom
+          const rootPath = getActiveWorkspace()?.path || ''
+          useNodeStore.getState().add('monaco', wx - 500, wy - 320, { rootPath })
+          break
+        }
         case 'fitAll':
           fitAllNodes(useNodeStore.getState().nodes)
           break

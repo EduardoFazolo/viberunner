@@ -149,6 +149,14 @@ export function setupWorkspaceHandlers(): void {
     await shell.openPath(filePath)
   })
 
+  ipcMain.handle('fs:readFile', async (_e, filePath: string) => {
+    return fs.promises.readFile(filePath, 'utf-8')
+  })
+
+  ipcMain.handle('fs:writeFile', async (_e, filePath: string, content: string) => {
+    await fs.promises.writeFile(filePath, content, 'utf-8')
+  })
+
   ipcMain.handle('fs:delete', async (_e, filePath: string) => {
     await fs.promises.rm(filePath, { recursive: true, force: true })
   })

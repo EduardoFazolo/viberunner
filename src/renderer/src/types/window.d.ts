@@ -124,6 +124,8 @@ declare global {
         modified: number
       }>>
       openFile: (filePath: string) => Promise<void>
+      readFile: (filePath: string) => Promise<string>
+      writeFile: (filePath: string, content: string) => Promise<void>
       delete: (filePath: string) => Promise<void>
     }
   }
