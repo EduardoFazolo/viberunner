@@ -266,7 +266,7 @@ const btnHover: React.CSSProperties = {
 
 interface DragDropTarget {
   nodeId: string
-  nodeType: 'terminal' | 'browser'
+  nodeType: 'terminal' | 'browser' | 'claude'
   title: string
   left: number
   top: number
@@ -319,7 +319,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
     const candidates = Array.from(useNodeStore.getState().nodes.values())
       .filter((candidate) =>
         candidate.id !== node.id &&
-        (candidate.type === 'terminal' || candidate.type === 'browser')
+        (candidate.type === 'terminal' || candidate.type === 'browser' || candidate.type === 'claude')
       )
       .map((candidate) => {
         const left = canvasRect.left + camera.x + candidate.x * camera.zoom
@@ -341,7 +341,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
 
     return {
       nodeId: hit.candidate.id,
-      nodeType: hit.candidate.type as 'terminal' | 'browser',
+      nodeType: hit.candidate.type as 'terminal' | 'browser' | 'claude',
       title: hit.candidate.title,
       left: hit.left,
       top: hit.top,
@@ -380,7 +380,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
           } catch {}
         }
 
-        if (target.nodeType === 'terminal') {
+        if (target.nodeType === 'terminal' || target.nodeType === 'claude') {
           useNodeStore.getState().setFocusedNodeId(target.nodeId)
           window.terminal.write(target.nodeId, text)
           return
@@ -729,7 +729,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
           boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
           textAlign: 'center',
         }}>
-          {dropTarget.nodeType === 'terminal' ? 'Drop to copy into terminal' : 'Drop to copy into browser'}
+          {dropTarget.nodeType === 'claude' ? 'Drop to send to Claude' : dropTarget.nodeType === 'terminal' ? 'Drop to copy into terminal' : 'Drop to copy into browser'}
         </div>
       </div>,
       document.body

@@ -62,6 +62,24 @@ export const useCameraStore = create<CameraStore>((set, get) => ({
   }),
 }))
 
+/** Smoothly animate the camera to a target state over `durationMs` milliseconds. */
+export function animateCameraTo(target: Camera, durationMs = 320): void {
+  const start = useCameraStore.getState().camera
+  const startTime = performance.now()
+  function ease(t: number): number { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t }
+  function step(): void {
+    const t = Math.min(1, (performance.now() - startTime) / durationMs)
+    const e = ease(t)
+    useCameraStore.getState().setCamera({
+      x: start.x + (target.x - start.x) * e,
+      y: start.y + (target.y - start.y) * e,
+      zoom: start.zoom + (target.zoom - start.zoom) * e,
+    })
+    if (t < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
+}
+
 export function worldToScreen(wx: number, wy: number, camera: Camera) {
   return {
     x: wx * camera.zoom + camera.x,

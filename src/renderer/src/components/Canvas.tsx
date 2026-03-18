@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useCameraStore, updateCursorPos } from '../stores/cameraStore'
+import { useCameraStore, updateCursorPos, animateCameraTo } from '../stores/cameraStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useNodeStore } from '../stores/nodeStore'
+import { computeFitCamera, getCanvasRect } from '../utils/canvasUtils'
 import { GridRenderer } from './GridRenderer'
 import { CanvasOverlay } from './CanvasOverlay'
 import { NodeLayer } from './NodeLayer'
@@ -15,6 +16,60 @@ export function Canvas(): React.ReactElement {
   const lastPos = useRef({ x: 0, y: 0 })
   const spaceHeldRef = useRef(false)
   const [spaceHeld, setSpaceHeld] = useState(false)
+
+  // Double-tap anywhere on a node (including webview content) to zoom-fit it;
+  // double-tap again to zoom back out.
+  // Uses world-coordinate hit testing so it works even when the click lands on a
+  // webview element that doesn't have data-node-id in its DOM ancestry.
+  useEffect(() => {
+    type Camera = ReturnType<typeof useCameraStore.getState>['camera']
+    const state = { lastTapTime: 0, lastNodeId: null as string | null, prevCamera: null as Camera | null }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return
+      const canvas = rootRef.current
+      if (!canvas) return
+
+      // Convert screen → world coordinates
+      const rect = canvas.getBoundingClientRect()
+      const { camera } = useCameraStore.getState()
+      const wx = (e.clientX - rect.left - camera.x) / camera.zoom
+      const wy = (e.clientY - rect.top - camera.y) / camera.zoom
+
+      // Hit-test all nodes; highest zIndex wins
+      const nodes = useNodeStore.getState().nodes
+      let hitNode = null
+      let maxZ = -Infinity
+      for (const node of nodes.values()) {
+        const h = node.minimized ? 32 : node.height
+        if (wx >= node.x && wx <= node.x + node.width && wy >= node.y && wy <= node.y + h) {
+          if (node.zIndex > maxZ) { maxZ = node.zIndex; hitNode = node }
+        }
+      }
+      if (!hitNode) return
+
+      const now = Date.now()
+      const isDoubleTap = hitNode.id === state.lastNodeId && now - state.lastTapTime < 350
+      state.lastTapTime = isDoubleTap ? 0 : now
+      state.lastNodeId = hitNode.id
+      if (!isDoubleTap) return
+
+      if (state.prevCamera) {
+        animateCameraTo(state.prevCamera)
+        state.prevCamera = null
+        return
+      }
+
+      const { width: vw, height: vh } = getCanvasRect()
+      const target = computeFitCamera(new Map([[hitNode.id, hitNode]]), vw, vh)
+      if (!target) return
+      state.prevCamera = camera
+      animateCameraTo(target)
+    }
+
+    document.addEventListener('pointerdown', onPointerDown, { capture: true })
+    return () => document.removeEventListener('pointerdown', onPointerDown, { capture: true } as any)
+  }, [])
 
   // Attach wheel as non-passive so preventDefault works
   useEffect(() => {
