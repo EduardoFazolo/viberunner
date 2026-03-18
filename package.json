@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@shikijs/monaco": "^4.0.2",
     "@tailwindcss/vite": "^4.2.1",
     "@tiptap/extension-image": "^3.20.4",
     "@tiptap/pm": "^3.20.4",
@@ -51,6 +52,8 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "sharp": "^0.34.5",
+    "shiki": "^4.0.2",
+    "simple-git": "^3.33.0",
     "tailwindcss": "^4.2.1",
     "zustand": "^5.0.0"
   },

@@ -89,6 +89,24 @@ contextBridge.exposeInMainWorld('sessions', {
 contextBridge.exposeInMainWorld('git', {
   clone: (repoUrl: string, targetDir: string): Promise<void> =>
     ipcRenderer.invoke('git:clone', repoUrl, targetDir),
+  isRepo: (rootPath: string): Promise<boolean> =>
+    ipcRenderer.invoke('git:isRepo', rootPath),
+  status: (rootPath: string): Promise<GitStatusResult> =>
+    ipcRenderer.invoke('git:status', rootPath),
+  fileAtHead: (rootPath: string, filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('git:fileAtHead', rootPath, filePath),
+  diff: (rootPath: string, filePath: string, staged: boolean): Promise<string> =>
+    ipcRenderer.invoke('git:diff', rootPath, filePath, staged),
+  stage: (rootPath: string, filePaths: string[]): Promise<void> =>
+    ipcRenderer.invoke('git:stage', rootPath, filePaths),
+  unstage: (rootPath: string, filePaths: string[]): Promise<void> =>
+    ipcRenderer.invoke('git:unstage', rootPath, filePaths),
+  commit: (rootPath: string, message: string): Promise<void> =>
+    ipcRenderer.invoke('git:commit', rootPath, message),
+  log: (rootPath: string, maxCount?: number): Promise<GitLogEntry[]> =>
+    ipcRenderer.invoke('git:log', rootPath, maxCount),
+  logGraph: (rootPath: string, maxCount?: number): Promise<GitGraphEntry[]> =>
+    ipcRenderer.invoke('git:logGraph', rootPath, maxCount),
 })
 
 contextBridge.exposeInMainWorld('fs', {
@@ -204,4 +222,33 @@ export interface NotionExternalDragExport {
   filePath: string
   fileUrl: string
   pageUrl: string
+}
+
+export interface GitFileStatus {
+  path: string
+  index: string
+  working: string
+}
+
+export interface GitStatusResult {
+  branch: string
+  ahead: number
+  behind: number
+  files: GitFileStatus[]
+}
+
+export interface GitLogEntry {
+  hash: string
+  date: string
+  message: string
+  author: string
+}
+
+export interface GitGraphEntry {
+  hash: string
+  fullHash: string
+  parents: string[]
+  author: string
+  subject: string
+  refs: string
 }

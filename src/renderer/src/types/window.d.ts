@@ -115,6 +115,18 @@ declare global {
 
     git: {
       clone: (repoUrl: string, targetDir: string) => Promise<void>
+      isRepo: (rootPath: string) => Promise<boolean>
+      status: (rootPath: string) => Promise<{
+        branch: string; ahead: number; behind: number
+        files: Array<{ path: string; index: string; working: string }>
+      }>
+      fileAtHead: (rootPath: string, filePath: string) => Promise<string | null>
+      diff: (rootPath: string, filePath: string, staged: boolean) => Promise<string>
+      stage: (rootPath: string, filePaths: string[]) => Promise<void>
+      unstage: (rootPath: string, filePaths: string[]) => Promise<void>
+      commit: (rootPath: string, message: string) => Promise<void>
+      log: (rootPath: string, maxCount?: number) => Promise<Array<{ hash: string; date: string; message: string; author: string }>>
+      logGraph: (rootPath: string, maxCount?: number) => Promise<Array<{ hash: string; fullHash: string; parents: string[]; author: string; subject: string; refs: string }>>
     }
 
     fs: {
