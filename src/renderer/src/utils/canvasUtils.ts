@@ -11,7 +11,7 @@ export interface NodeRect {
 
 const MINIMIZED_HEIGHT = 32
 const FIT_PADDING = 20
-const FIT_MAX_ZOOM = 3.0
+const FIT_MAX_ZOOM = 2.0
 
 /** Returns the canvas element's actual dimensions, falling back to viewport size. */
 export function getCanvasRect(): { width: number; height: number } {
