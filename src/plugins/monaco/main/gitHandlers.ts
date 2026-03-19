@@ -93,7 +93,12 @@ export function registerGitHandlers(ipc: IpcMainLike): void {
   ipc.handle('git:checkoutBranch', async (_e, rootPath: string, name: string, createNew: boolean) => {
     const g = git(rootPath)
     if (createNew) {
-      await g.checkoutLocalBranch(name)
+      const branches = await g.branchLocal()
+      if (branches.all.includes(name)) {
+        await g.checkout(name)
+      } else {
+        await g.checkoutLocalBranch(name)
+      }
     } else {
       await g.checkout(name)
     }
