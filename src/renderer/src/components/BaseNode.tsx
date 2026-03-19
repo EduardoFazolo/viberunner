@@ -220,6 +220,30 @@ export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): 
 
         {titleExtra}
 
+        {/* Zoom out button */}
+        <button
+          style={{ ...btnBase }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); update(node.id, { contentScale: Math.max(0.5, (node.contentScale ?? 1) - 0.25) }) }}
+          title="Zoom out content"
+          onMouseEnter={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnHover)}
+          onMouseLeave={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnBase)}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+        </button>
+
+        {/* Zoom in button */}
+        <button
+          style={{ ...btnBase }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); update(node.id, { contentScale: Math.min(2, (node.contentScale ?? 1) + 0.25) }) }}
+          title="Zoom in content"
+          onMouseEnter={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnHover)}
+          onMouseLeave={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnBase)}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 2v6M2 5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+        </button>
+
         {/* Minimize button */}
         <button
           style={{ ...btnBase }}
@@ -260,6 +284,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): 
           border: '1px solid rgba(255,255,255,0.07)',
           borderTop: 'none',
           borderRadius: '0 0 8px 8px',
+          zoom: node.contentScale ?? 1,
         }}>
           {children}
         </div>
