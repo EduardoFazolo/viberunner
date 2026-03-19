@@ -44,6 +44,7 @@ export function Canvas(): React.ReactElement {
         }
       }
       if (!hitNode) return
+      if ((e.target as HTMLElement).closest('[data-no-canvas-gesture]')) return
 
       const now = Date.now()
       const isDoubleTap = hitNode.id === tap.lastNodeId && now - tap.lastTime < 350

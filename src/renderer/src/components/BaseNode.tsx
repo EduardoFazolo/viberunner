@@ -93,9 +93,10 @@ interface Props {
   children?: React.ReactNode
   onContextMenu?: (e: React.MouseEvent) => void
   titleExtra?: React.ReactNode
+  noCssZoom?: boolean
 }
 
-export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): React.ReactElement {
+export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom }: Props): React.ReactElement {
   const { update, bringToFront, remove, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const { setDraggingOverSidebar, add: addTemplate } = useTemplateStore()
   const focused = focusedNodeId === node.id
@@ -223,6 +224,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): 
         {/* Zoom out button */}
         <button
           style={{ ...btnBase }}
+          data-no-canvas-gesture
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); update(node.id, { contentScale: Math.max(0.5, (node.contentScale ?? 1) - 0.25) }) }}
           title="Zoom out content"
@@ -235,6 +237,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): 
         {/* Zoom in button */}
         <button
           style={{ ...btnBase }}
+          data-no-canvas-gesture
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); update(node.id, { contentScale: Math.min(2, (node.contentScale ?? 1) + 0.25) }) }}
           title="Zoom in content"
@@ -284,7 +287,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra }: Props): 
           border: '1px solid rgba(255,255,255,0.07)',
           borderTop: 'none',
           borderRadius: '0 0 8px 8px',
-          zoom: node.contentScale ?? 1,
+          zoom: noCssZoom ? 1 : (node.contentScale ?? 1),
         }}>
           {children}
         </div>

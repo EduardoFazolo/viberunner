@@ -98,6 +98,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const serializeAddonRef = useRef<SerializeAddon | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const baseFontSizeRef = useRef<number>(13)
   const { update, remove, bringToFront, sendToBack, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const focusedNodeIdRef = useRef(focusedNodeId)
   useEffect(() => { focusedNodeIdRef.current = focusedNodeId }, [focusedNodeId])
@@ -109,9 +110,10 @@ export function TerminalNode({ node }: Props): React.ReactElement {
 
     const { settings: appSettings } = useSettingsStore.getState()
 
+    baseFontSizeRef.current = appSettings.fontSize
     const term = new Terminal({
       fontFamily: 'JetBrains Mono, Menlo, Consolas, monospace',
-      fontSize: appSettings.fontSize,
+      fontSize: appSettings.fontSize * (node.contentScale ?? 1),
       lineHeight: 1.2,
       cursorBlink: true,
       allowTransparency: false,
@@ -295,10 +297,19 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     return () => clearTimeout(timer)
   }, [node.width, node.height, node.minimized, node.id])
 
+  // Update font size when contentScale changes
+  useEffect(() => {
+    if (!xtermRef.current || !fitAddonRef.current) return
+    xtermRef.current.options.fontSize = baseFontSizeRef.current * (node.contentScale ?? 1)
+    fitAddonRef.current.fit()
+    const { cols, rows } = xtermRef.current
+    window.terminal.resize(node.id, cols, rows)
+  }, [node.contentScale, node.id])
+
   return (
     <ContextMenu>
       <ContextMenuTrigger>
-        <BaseNode node={node}>
+        <BaseNode node={node} noCssZoom>
           <div
             ref={containerRef}
             style={{ width: '100%', height: node.height - 32, padding: '6px 8px', boxSizing: 'border-box', position: 'relative' }}
