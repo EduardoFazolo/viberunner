@@ -8,37 +8,37 @@ import { useCameraStore, animateCameraTo } from '../stores/cameraStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { computeFitCamera, getCanvasRect } from './canvasUtils'
 
-const state: { nodeId: string | null; prevCamera: Camera | null } = {
+const state: { nodeId: string | null } = {
   nodeId: null,
-  prevCamera: null,
 }
 
-/** Exit zoom mode unconditionally — restores the saved camera. */
+/** Exit zoom mode unconditionally — fits all nodes in view. */
 export function zoomExit(): void {
-  if (state.prevCamera) {
-    animateCameraTo(state.prevCamera)
-    state.prevCamera = null
-    state.nodeId = null
-  }
+  const { width: vw, height: vh } = getCanvasRect()
+  const allNodes = useNodeStore.getState().nodes
+  const target = computeFitCamera(allNodes, vw, vh)
+  if (target) animateCameraTo(target)
+  state.nodeId = null
 }
 
 export function zoomFitNode(nodeId: string): void {
-  const node = useNodeStore.getState().nodes.get(nodeId)
+  const { width: vw, height: vh } = getCanvasRect()
+  const allNodes = useNodeStore.getState().nodes
+  const node = allNodes.get(nodeId)
   if (!node) return
 
-  // Second tap on the same node → zoom back out
-  if (state.nodeId === nodeId && state.prevCamera) {
-    animateCameraTo(state.prevCamera)
-    state.prevCamera = null
+  // Second tap on the same node → always zoom out to fit all nodes
+  if (state.nodeId === nodeId) {
+    const target = computeFitCamera(allNodes, vw, vh)
+    if (target) animateCameraTo(target)
     state.nodeId = null
     return
   }
 
-  const { width: vw, height: vh } = getCanvasRect()
+  // First tap → zoom to fit this node
   const target = computeFitCamera(new Map([[nodeId, node]]), vw, vh)
   if (!target) return
 
-  state.prevCamera = useCameraStore.getState().camera
   state.nodeId = nodeId
   animateCameraTo(target)
 }

@@ -4,7 +4,7 @@
  * and provides: branch info, changed-file links, stage-all, commit, and push.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { GitBranch, ArrowUpFromLine, GitCommitHorizontal, Plus, X, ChevronDown, ChevronUp, Loader2, Check, AlertCircle } from 'lucide-react'
+import { GitBranch, ArrowUpFromLine, GitCommitHorizontal, Plus, Minus, X, ChevronDown, ChevronUp, Loader2, Check, AlertCircle } from 'lucide-react'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
 // Extension → Monaco language ID
@@ -121,9 +121,11 @@ interface FileRowProps {
   file: GitFile
   gitPath: string
   onOpenDiff: (filePath: string, gitPath: string) => void
+  onStage: (filePath: string) => void
+  onUnstage: (filePath: string) => void
 }
 
-function FileRow({ file, gitPath, onOpenDiff }: FileRowProps): React.ReactElement {
+function FileRow({ file, gitPath, onOpenDiff, onStage, onUnstage }: FileRowProps): React.ReactElement {
   const { char, color, staged } = statusChar(file)
   const [hovered, setHovered] = useState(false)
 
@@ -137,9 +139,11 @@ function FileRow({ file, gitPath, onOpenDiff }: FileRowProps): React.ReactElemen
         display: 'flex',
         alignItems: 'center',
         gap: 7,
-        padding: '4px 12px',
+        padding: '4px 8px 4px 12px',
         cursor: 'pointer',
-        background: hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
+        background: hovered
+          ? staged ? 'rgba(74,222,128,0.08)' : 'rgba(255,255,255,0.04)'
+          : staged ? 'rgba(74,222,128,0.04)' : 'transparent',
         transition: 'background 0.1s ease',
         minWidth: 0,
       }}
@@ -191,22 +195,51 @@ function FileRow({ file, gitPath, onOpenDiff }: FileRowProps): React.ReactElemen
         </span>
       )}
 
-      {/* Staged indicator */}
-      {staged && (
-        <span style={{
-          fontSize: 9,
-          color: '#4ade80',
-          background: '#4ade8018',
-          border: '1px solid #4ade8033',
-          borderRadius: 3,
-          padding: '1px 4px',
-          flexShrink: 0,
-          fontFamily: 'ui-monospace, Menlo, monospace',
-          letterSpacing: '0.04em',
-        }}>
-          staged
-        </span>
-      )}
+      {/* Fixed-size slot so the row height never changes on hover */}
+      <div style={{ flexShrink: 0, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {hovered ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              staged ? onUnstage(file.path) : onStage(file.path)
+            }}
+            title={staged ? 'Unstage file' : 'Stage file'}
+            style={{
+              width: 20, height: 20,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: staged ? 'rgba(251,191,36,0.12)' : 'rgba(74,222,128,0.12)',
+              border: `1px solid ${staged ? 'rgba(251,191,36,0.3)' : 'rgba(74,222,128,0.3)'}`,
+              borderRadius: 5,
+              cursor: 'pointer',
+              color: staged ? '#fbbf24' : '#4ade80',
+              padding: 0,
+              transition: 'background 0.1s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = staged ? 'rgba(251,191,36,0.22)' : 'rgba(74,222,128,0.22)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = staged ? 'rgba(251,191,36,0.12)' : 'rgba(74,222,128,0.12)'
+            }}
+          >
+            {staged ? <Minus size={11} /> : <Plus size={11} />}
+          </button>
+        ) : staged ? (
+          <span style={{
+            fontSize: 9,
+            color: '#4ade80',
+            background: '#4ade8018',
+            border: '1px solid #4ade8033',
+            borderRadius: 3,
+            padding: '1px 4px',
+            fontFamily: 'ui-monospace, Menlo, monospace',
+            letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
+          }}>
+            ✓
+          </span>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -218,9 +251,10 @@ interface ActionButtonProps {
   icon: React.ReactNode
   label: string
   accent?: string
+  badge?: number
 }
 
-function ActionButton({ onClick, disabled, state = 'idle', icon, label, accent }: ActionButtonProps): React.ReactElement {
+function ActionButton({ onClick, disabled, state = 'idle', icon, label, accent, badge }: ActionButtonProps): React.ReactElement {
   const [hovered, setHovered] = useState(false)
   const isLoading = state === 'loading'
   const isSuccess = state === 'success'
@@ -256,6 +290,7 @@ function ActionButton({ onClick, disabled, state = 'idle', icon, label, accent }
       onMouseLeave={() => setHovered(false)}
       style={{
         flex: 1,
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -282,6 +317,26 @@ function ActionButton({ onClick, disabled, state = 'idle', icon, label, accent }
             : <span style={{ flexShrink: 0, display: 'flex' }}>{icon}</span>
       }
       <span>{isSuccess ? 'Done' : isError ? 'Error' : label}</span>
+      {badge != null && badge > 0 && !isLoading && !isSuccess && !isError && (
+        <span style={{
+          position: 'absolute',
+          top: -5, right: -5,
+          minWidth: 16, height: 16,
+          padding: '0 4px',
+          borderRadius: 8,
+          background: 'rgba(255,255,255,0.15)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          color: 'rgba(255,255,255,0.7)',
+          fontSize: 9,
+          fontWeight: 600,
+          fontFamily: 'ui-monospace, Menlo, monospace',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          lineHeight: 1,
+          boxSizing: 'border-box',
+        }}>
+          {badge}
+        </span>
+      )}
     </button>
   )
 }
@@ -467,6 +522,7 @@ export function GitOverlay(): React.ReactElement | null {
   const [collapsed, setCollapsed] = useState(false)
   const [commitOpen, setCommitOpen] = useState(false)
   const [stageState, setStageState] = useState<ActionState>('idle')
+  const [unstageState, setUnstageState] = useState<ActionState>('idle')
   const [pushState, setPushState] = useState<ActionState>('idle')
   const [visible, setVisible] = useState(false)
   const [pushError, setPushError] = useState<string | null>(null)
@@ -530,6 +586,23 @@ export function GitOverlay(): React.ReactElement | null {
     } catch {
       setStageState('error')
       setTimeout(() => setStageState('idle'), 2000)
+    }
+  }
+
+  const unstageAll = async () => {
+    if (!gitPath || !status || unstageState === 'loading') return
+    setUnstageState('loading')
+    try {
+      const staged = status.files
+        .filter((f) => f.index.trim() !== '' && f.index.trim() !== ' ' && f.index.trim() !== '?')
+        .map((f) => f.path)
+      await window.git.unstage(gitPath, staged)
+      setUnstageState('success')
+      await fetchStatus(gitPath)
+      setTimeout(() => setUnstageState('idle'), 1500)
+    } catch {
+      setUnstageState('error')
+      setTimeout(() => setUnstageState('idle'), 2000)
     }
   }
 
@@ -702,6 +775,8 @@ export function GitOverlay(): React.ReactElement | null {
                     file={file}
                     gitPath={gitPath}
                     onOpenDiff={openDiff}
+                    onStage={async (fp) => { await window.git.stage(gitPath, [fp]); fetchStatus(gitPath) }}
+                    onUnstage={async (fp) => { await window.git.unstage(gitPath, [fp]); fetchStatus(gitPath) }}
                   />
                 ))}
               </div>
@@ -745,9 +820,19 @@ export function GitOverlay(): React.ReactElement | null {
                 disabled={!hasChanges}
                 state={stageState}
                 icon={<Plus size={12} />}
-                label={stagedCount > 0 ? `Stage all (${stagedCount})` : 'Stage all'}
+                label='Stage all'
                 accent='rgba(255,255,255,0.6)'
+                badge={hasChanges ? status.files.length : undefined}
               />
+              {stagedCount > 0 && (
+                <ActionButton
+                  onClick={unstageAll}
+                  state={unstageState}
+                  icon={<Minus size={12} />}
+                  label='Unstage'
+                  accent='#fbbf24'
+                />
+              )}
               <ActionButton
                 onClick={() => setCommitOpen(true)}
                 disabled={stagedCount === 0}
