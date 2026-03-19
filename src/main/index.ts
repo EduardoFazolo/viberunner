@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, WebContents } from 'electron'
+import { app, BrowserWindow, ipcMain, session, Menu, WebContents } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { setupPtyHandlers, killAllPtys, cleanupOrphanSessions } from './pty'
@@ -68,6 +68,12 @@ function createWindow(): void {
 
   // Apply session setup to every webview that attaches (covers named sessions too)
   mainWindow.webContents.on('did-attach-webview', (_event, webviewContents: WebContents) => {
+    // ERR_ABORTED (-3) fires whenever a navigation is cancelled mid-flight (webview
+    // destroyed, redirected, etc.). It is harmless — suppress to keep logs clean.
+    webviewContents.on('did-fail-load', (_e, errorCode) => {
+      if (errorCode === -3) return
+    })
+
     setupBrowserSession(webviewContents.session)
 
     // Popup windows (OAuth etc.) inherit the webview's session so cookies are shared
@@ -86,6 +92,23 @@ function createWindow(): void {
     }))
   })
 }
+
+// Minimal application menu that restores native Cmd+C/V/X/A/Z clipboard shortcuts.
+// Without this, Electron apps with autoHideMenuBar lose the Edit role bindings.
+Menu.setApplicationMenu(Menu.buildFromTemplate([
+  { label: app.name, submenu: [{ role: 'quit' }] },
+  {
+    label: 'Edit', submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'selectAll' },
+    ],
+  },
+]))
 
 app.whenReady().then(async () => {
   try {
