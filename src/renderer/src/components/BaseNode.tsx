@@ -173,6 +173,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
         left: node.x,
         top: node.y,
         width: node.width,
+        height: node.height,
         zIndex: node.zIndex,
         borderRadius: 8,
         boxShadow: focused
