@@ -532,11 +532,11 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
         onToggle={() => setChangesOpen(v => !v)}
         count={totalChanges}
       >
-        {status && (
+        {status && (status.ahead > 0 || status.behind > 0) && (
           <span style={{ fontSize: 10, color: '#73c991', fontFamily: 'monospace', background: '#1e1e1e', padding: '1px 5px', borderRadius: 3, marginRight: 2 }}>
-            {status.branch}
-            {status.ahead > 0 && ` ↑${status.ahead}`}
-            {status.behind > 0 && ` ↓${status.behind}`}
+            {status.ahead > 0 && `↑${status.ahead}`}
+            {status.ahead > 0 && status.behind > 0 && ' '}
+            {status.behind > 0 && `↓${status.behind}`}
           </span>
         )}
         <button

@@ -595,7 +595,7 @@ export function GitOverlay(): React.ReactElement | null {
           position: 'absolute',
           bottom: 20,
           left: 16,
-          width: 312,
+          width: 406,
           zIndex: 500,
           background: 'rgba(13, 13, 13, 0.97)',
           backdropFilter: 'blur(20px)',
