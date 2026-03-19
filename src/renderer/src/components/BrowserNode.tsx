@@ -484,6 +484,16 @@ export function BrowserNode({ node }: Props): React.ReactElement {
     const onIpcMessage = (e: any) => {
       if (e.channel === 'canvas:double-tap') zoomFitNode(node.id)
       if (e.channel === 'canvas:zoom-exit') zoomExit()
+      if (e.channel === 'canvas:wheel') {
+        const { deltaY, clientX, clientY, viewportWidth, viewportHeight } = e.args[0] ?? {}
+        const wvRect = (webviewRef.current as HTMLElement | null)?.getBoundingClientRect()
+        if (!wvRect) return
+        const scaleX = viewportWidth ? wvRect.width / viewportWidth : 1
+        const scaleY = viewportHeight ? wvRect.height / viewportHeight : 1
+        const hostX = wvRect.left + clientX * scaleX
+        const hostY = wvRect.top + clientY * scaleY
+        useCameraStore.getState().zoomAt(hostX, hostY, deltaY)
+      }
     }
 
     wv.addEventListener('did-start-loading', onStartLoading)
@@ -731,7 +741,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
           <div
             ref={webviewAreaRef}
             style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: isActivated ? '#ffffff' : '#0d0d0d' }}
-            onPointerDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => { useActivationStore.getState().activate(node.id); e.stopPropagation() }}
             onDragOver={(e) => {
               if (e.dataTransfer.types.includes('application/canvaflow-session')) {
                 e.preventDefault()

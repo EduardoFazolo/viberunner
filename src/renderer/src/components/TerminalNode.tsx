@@ -283,6 +283,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     const el = containerRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return
       if (focusedNodeIdRef.current === node.id) e.stopPropagation()
     }
     el.addEventListener('wheel', onWheel, { passive: true })
@@ -316,7 +317,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
           <div
             ref={containerRef}
             style={{ width: '100%', height: node.height - 32, padding: isActivated ? '6px 8px' : 0, boxSizing: 'border-box', position: 'relative' }}
-            onPointerDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => { useActivationStore.getState().activate(node.id); e.stopPropagation() }}
           >
             {isActivated ? (
               <>

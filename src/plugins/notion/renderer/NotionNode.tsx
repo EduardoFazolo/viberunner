@@ -490,6 +490,17 @@ export function NotionNode({ node }: Props): React.ReactElement {
         zoomExit()
         return
       }
+      if (channel === 'canvas:wheel') {
+        const { deltaY, clientX, clientY, viewportWidth, viewportHeight } = args[0]
+        const wvRect = (webviewRef.current as HTMLElement | null)?.getBoundingClientRect()
+        if (!wvRect) return
+        const scaleX = viewportWidth ? wvRect.width / viewportWidth : 1
+        const scaleY = viewportHeight ? wvRect.height / viewportHeight : 1
+        const hostX = wvRect.left + clientX * scaleX
+        const hostY = wvRect.top + clientY * scaleY
+        useCameraStore.getState().zoomAt(hostX, hostY, deltaY)
+        return
+      }
       if (channel === 'notion:drag-start') {
         const { pageId, title, x, y, viewportWidth, viewportHeight } = args[0]
         prevWebviewPos.current = { x, y }
@@ -641,7 +652,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
           {/* Webview area */}
           <div
             style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: isActivated ? '#ffffff' : '#0d0d0d' }}
-            onPointerDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => { useActivationStore.getState().activate(node.id); e.stopPropagation() }}
             onDragOver={(e) => {
               if (e.dataTransfer.types.includes('application/canvaflow-session')) {
                 e.preventDefault()

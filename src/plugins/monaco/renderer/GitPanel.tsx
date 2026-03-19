@@ -400,7 +400,10 @@ export function GitPanel({ rootPath, onOpenDiff, onRefreshNeeded }: Props): Reac
 
   // Stop wheel events bubbling out of scroll areas
   useEffect(() => {
-    const stop = (e: WheelEvent) => e.stopPropagation()
+    const stop = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return
+      e.stopPropagation()
+    }
     const els = [changesScrollRef.current, graphScrollRef.current]
     els.forEach(el => el?.addEventListener('wheel', stop, { passive: true }))
     return () => els.forEach(el => el?.removeEventListener('wheel', stop))

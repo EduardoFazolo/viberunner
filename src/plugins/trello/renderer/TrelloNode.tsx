@@ -758,7 +758,7 @@ export function TrelloNode({ node }: Props): React.ReactElement {
           {/* Webview area */}
           <div
             style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: '#1D2125' }}
-            onPointerDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => { useActivationStore.getState().activate(node.id); e.stopPropagation() }}
             onDragOver={(e) => {
               if (e.dataTransfer.types.includes('application/canvaflow-session')) {
                 e.preventDefault(); e.dataTransfer.dropEffect = 'copy'

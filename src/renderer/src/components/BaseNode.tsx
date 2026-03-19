@@ -101,10 +101,6 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
   const { update, bringToFront, remove, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const { setDraggingOverSidebar, add: addTemplate } = useTemplateStore()
   const focused = focusedNodeId === node.id
-  const cameraRef = useRef(useCameraStore.getState().camera)
-
-  // Keep camera ref current without re-rendering
-  useCameraStore.subscribe((s) => { cameraRef.current = s.camera })
 
   const isDragging = useRef(false)
   const dragStart = useRef({ px: 0, py: 0, nx: 0, ny: 0 })
@@ -116,14 +112,16 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
     if (e.button !== 0) return
     e.stopPropagation()
     bringToFront(node.id)
+    setFocusedNodeId(node.id)
+    useActivationStore.getState().activate(node.id)
     isDragging.current = true
     dragStart.current = { px: e.clientX, py: e.clientY, nx: node.x, ny: node.y }
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-  }, [node.id, node.x, node.y, bringToFront])
+  }, [node.id, node.x, node.y, bringToFront, setFocusedNodeId])
 
   const onHeaderPointerMove = useCallback((e: React.PointerEvent) => {
     if (!isDragging.current) return
-    const zoom = cameraRef.current.zoom
+    const zoom = useCameraStore.getState().camera.zoom
     const dx = (e.clientX - dragStart.current.px) / zoom
     const dy = (e.clientY - dragStart.current.py) / zoom
     update(node.id, {
@@ -154,7 +152,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
 
   const onResizePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isResizing.current) return
-    const zoom = cameraRef.current.zoom
+    const zoom = useCameraStore.getState().camera.zoom
     const dw = (e.clientX - resizeStart.current.px) / zoom
     const dh = (e.clientY - resizeStart.current.py) / zoom
     update(node.id, {

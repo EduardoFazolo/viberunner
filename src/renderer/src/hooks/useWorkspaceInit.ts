@@ -6,16 +6,15 @@ import { useCameraStore, Camera } from '../stores/cameraStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useActivationStore } from '../stores/activationStore'
 
-// Stagger activation so nodes don't all initialize in the same frame
-function activateNodesStaggered(nodeIds: string[]): void {
-  const BATCH = 2
-  const DELAY_MS = 80
-  for (let i = 0; i < nodeIds.length; i += BATCH) {
-    const batch = nodeIds.slice(i, i + BATCH)
-    setTimeout(() => {
-      for (const id of batch) useActivationStore.getState().activate(id)
-    }, (i / BATCH) * DELAY_MS)
-  }
+// Activate nodes after React has had a chance to mount the components.
+// Two rAF frames ensures the DOM commit + paint cycle completes first.
+function activateNodesAfterMount(nodeIds: string[]): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const { activate } = useActivationStore.getState()
+      for (const id of nodeIds) activate(id)
+    })
+  })
 }
 
 // Per-workspace camera cache — avoids DB round-trip when switching back to a visited workspace
@@ -141,7 +140,7 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
 
     if (existing) {
       useNodeStore.getState().loadWorkspace(workspaceId, existing)
-      activateNodesStaggered([...existing.keys()])
+      activateNodesAfterMount([...existing.keys()])
     } else {
       // First visit — load from DB
       const nodeRows = await api.canvas.getNodes(workspaceId)
@@ -151,7 +150,7 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
         nodes.set(node.id, node)
       }
       useNodeStore.getState().loadWorkspace(workspaceId, nodes)
-      activateNodesStaggered([...nodes.keys()])
+      activateNodesAfterMount([...nodes.keys()])
 
       // Update sidebar summaries
       useWorkspaceStore.getState().setNodeSummaries(

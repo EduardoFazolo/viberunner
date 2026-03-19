@@ -16,3 +16,18 @@ document.addEventListener('pointerdown', (e) => {
     lastTapTime = now
   }
 }, { capture: true })
+
+// Pinch gestures on macOS trackpads arrive as wheel events with ctrlKey=true.
+// Forward them to the host canvas so zoom always affects the canvas, not the page.
+document.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey) return
+  e.preventDefault()
+  e.stopPropagation()
+  ipcRenderer.sendToHost('canvas:wheel', {
+    deltaY: e.deltaY,
+    clientX: e.clientX,
+    clientY: e.clientY,
+    viewportWidth: document.documentElement.clientWidth,
+    viewportHeight: document.documentElement.clientHeight,
+  })
+}, { passive: false, capture: true })

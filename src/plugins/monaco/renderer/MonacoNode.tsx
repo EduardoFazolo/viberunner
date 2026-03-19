@@ -13,6 +13,13 @@ interface Props {
   node: NodeData
 }
 
+function stopWheelUnlessPinching(
+  e: Pick<WheelEvent, 'ctrlKey' | 'metaKey' | 'stopPropagation'>,
+): void {
+  if (e.ctrlKey || e.metaKey) return
+  e.stopPropagation()
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -281,7 +288,7 @@ function FileTree({ rootPath, rootName, selectedPath, onSelect, gitFiles }: {
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const stop = (e: WheelEvent) => e.stopPropagation()
+    const stop = (e: WheelEvent) => stopWheelUnlessPinching(e)
     el.addEventListener('wheel', stop, { passive: true })
     return () => el.removeEventListener('wheel', stop)
   }, [])
@@ -455,7 +462,7 @@ function TabBar({ tabs, activeTab, onSelect, onClose }: {
   return (
     <div
       style={{ height: TABS_H, display: 'flex', alignItems: 'stretch', background: '#252526', overflowX: 'auto', overflowY: 'hidden', flexShrink: 0, borderBottom: '1px solid #1e1e1e' }}
-      onPointerDown={e => e.stopPropagation()} onWheel={e => e.stopPropagation()}
+      onPointerDown={e => e.stopPropagation()} onWheel={stopWheelUnlessPinching}
     >
       {tabs.map(tab => {
         const active = tab.path === activeTab
@@ -802,7 +809,7 @@ export function MonacoNode({ node }: Props): React.ReactElement {
           <div
             style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}
             onPointerDown={e => e.stopPropagation()}
-            onWheel={e => e.stopPropagation()}
+            onWheel={stopWheelUnlessPinching}
           >
             {diffState ? (
               <DiffEditor

@@ -141,7 +141,10 @@ export function FilesNode({ node }: Props): React.ReactElement {
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const stop = (e: WheelEvent) => e.stopPropagation()
+    const stop = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return
+      e.stopPropagation()
+    }
     el.addEventListener('wheel', stop, { passive: true })
     return () => el.removeEventListener('wheel', stop)
   }, [])
