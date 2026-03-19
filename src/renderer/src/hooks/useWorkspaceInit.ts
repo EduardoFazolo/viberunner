@@ -4,6 +4,19 @@ import { useWorkspaceStore, Workspace } from '../stores/workspaceStore'
 import { useNodeStore, NodeData, NodeType } from '../stores/nodeStore'
 import { useCameraStore, Camera } from '../stores/cameraStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useActivationStore } from '../stores/activationStore'
+
+// Stagger activation so nodes don't all initialize in the same frame
+function activateNodesStaggered(nodeIds: string[]): void {
+  const BATCH = 2
+  const DELAY_MS = 80
+  for (let i = 0; i < nodeIds.length; i += BATCH) {
+    const batch = nodeIds.slice(i, i + BATCH)
+    setTimeout(() => {
+      for (const id of batch) useActivationStore.getState().activate(id)
+    }, (i / BATCH) * DELAY_MS)
+  }
+}
 
 // Per-workspace camera cache — avoids DB round-trip when switching back to a visited workspace
 const _workspaceCameraCache = new Map<string, Camera>()
@@ -128,6 +141,7 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
 
     if (existing) {
       useNodeStore.getState().loadWorkspace(workspaceId, existing)
+      activateNodesStaggered([...existing.keys()])
     } else {
       // First visit — load from DB
       const nodeRows = await api.canvas.getNodes(workspaceId)
@@ -137,6 +151,7 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
         nodes.set(node.id, node)
       }
       useNodeStore.getState().loadWorkspace(workspaceId, nodes)
+      activateNodesStaggered([...nodes.keys()])
 
       // Update sidebar summaries
       useWorkspaceStore.getState().setNodeSummaries(

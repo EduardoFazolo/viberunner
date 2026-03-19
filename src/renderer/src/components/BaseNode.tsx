@@ -3,6 +3,7 @@ import { NodeData } from '../stores/nodeStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { useTemplateStore } from '../stores/templateStore'
+import { useActivationStore } from '../stores/activationStore'
 import { SIDEBAR_W } from './Sidebar'
 
 const btnBase: React.CSSProperties = {
@@ -182,7 +183,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
         overflow: 'hidden',
         transition: 'box-shadow 0.15s',
       }}
-      onPointerDown={(e) => { bringToFront(node.id); setFocusedNodeId(node.id); e.stopPropagation() }}
+      onPointerDown={(e) => { bringToFront(node.id); setFocusedNodeId(node.id); useActivationStore.getState().activate(node.id); e.stopPropagation() }}
       onContextMenu={onContextMenu}
     >
       {/* Title bar */}

@@ -3,6 +3,8 @@ import { NodeData, useNodeStore } from '../stores/nodeStore'
 import { BaseNode } from './BaseNode'
 import { useCameraStore } from '../stores/cameraStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { useActivationStore } from '../stores/activationStore'
+import { NodePlaceholder } from './NodePlaceholder'
 import { registerBrowserPaster, unregisterBrowserPaster } from '../browserRegistry'
 import { zoomFitNode, zoomExit } from '../utils/zoomFocus'
 import {
@@ -293,6 +295,7 @@ interface Props {
 
 export function BrowserNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack, add, focusedNodeId, setFocusedNodeId } = useNodeStore()
+  const isActivated = useActivationStore((s) => !!s.activated[node.id])
   const webviewRef = useRef<any>(null)
   const webviewAreaRef = useRef<HTMLDivElement>(null)
 
@@ -727,7 +730,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
           {/* Webview area — webview stays mounted always to preserve page state */}
           <div
             ref={webviewAreaRef}
-            style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: '#ffffff' }}
+            style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: isActivated ? '#ffffff' : '#0d0d0d' }}
             onPointerDown={(e) => e.stopPropagation()}
             onDragOver={(e) => {
               if (e.dataTransfer.types.includes('application/canvaflow-session')) {
@@ -746,7 +749,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
               }
             }}
           >
-            {canvasPreloadPath && (
+            {isActivated && canvasPreloadPath && (
               <webview
                 key={partition}
                 ref={webviewRef}
@@ -757,16 +760,16 @@ export function BrowserNode({ node }: Props): React.ReactElement {
                 style={{ width: '100%', height: '100%', display: 'flex' }}
               />
             )}
-            {/* Thumbnail overlay — sits on top when zoomed out, webview stays alive underneath */}
-            {isThumbnailMode && thumbnail && (
+            {isActivated && isThumbnailMode && thumbnail && (
               <img
                 src={thumbnail}
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 alt="Browser thumbnail"
               />
             )}
+            {!isActivated && <NodePlaceholder icon="browser" />}
             {/* Focus guard — blocks input to webview when not active, letting wheel events bubble to canvas */}
-            {focusedNodeId !== node.id && (
+            {isActivated && focusedNodeId !== node.id && (
               <div
                 style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }}
                 onPointerDown={(e) => {

@@ -10,6 +10,8 @@ import { useWorkspaceStore } from '../stores/workspaceStore'
 import { registerTerminal, unregisterTerminal } from '../terminalRegistry'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useActivityStore } from '../stores/activityStore'
+import { useActivationStore } from '../stores/activationStore'
+import { NodePlaceholder } from './NodePlaceholder'
 import { normalizeClientPointForElement } from '../utils/terminalMouse'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -102,9 +104,10 @@ export function TerminalNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const focusedNodeIdRef = useRef(focusedNodeId)
   useEffect(() => { focusedNodeIdRef.current = focusedNodeId }, [focusedNodeId])
+  const isActivated = useActivationStore((s) => !!s.activated[node.id])
 
   useEffect(() => {
-    if (!termRef.current) return
+    if (!isActivated || !termRef.current) return
 
     const workspaceId = useWorkspaceStore.getState().activeId || ''
 
@@ -271,7 +274,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       fitAddonRef.current = null
       serializeAddonRef.current = null
     }
-  }, [node.id])
+  }, [node.id, isActivated])
 
 
   // Block wheel events from reaching the canvas only when this terminal is focused.
@@ -312,20 +315,26 @@ export function TerminalNode({ node }: Props): React.ReactElement {
         <BaseNode node={node} noCssZoom>
           <div
             ref={containerRef}
-            style={{ width: '100%', height: node.height - 32, padding: '6px 8px', boxSizing: 'border-box', position: 'relative' }}
+            style={{ width: '100%', height: node.height - 32, padding: isActivated ? '6px 8px' : 0, boxSizing: 'border-box', position: 'relative' }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {/* isolation: isolate contains xterm's internal z-indices so our overlay can sit above them */}
-            <div ref={termRef} style={{ width: '100%', height: '100%', isolation: 'isolate' }} />
-            {focusedNodeId !== node.id && (
-              <div
-                style={{ position: 'absolute', inset: 0, zIndex: 9999, cursor: 'text' }}
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                  setFocusedNodeId(node.id)
-                  setTimeout(() => xtermRef.current?.focus(), 0)
-                }}
-              />
+            {isActivated ? (
+              <>
+                {/* isolation: isolate contains xterm's internal z-indices so our overlay can sit above them */}
+                <div ref={termRef} style={{ width: '100%', height: '100%', isolation: 'isolate' }} />
+                {focusedNodeId !== node.id && (
+                  <div
+                    style={{ position: 'absolute', inset: 0, zIndex: 9999, cursor: 'text' }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation()
+                      setFocusedNodeId(node.id)
+                      setTimeout(() => xtermRef.current?.focus(), 0)
+                    }}
+                  />
+                )}
+              </>
+            ) : (
+              <NodePlaceholder icon="terminal" />
             )}
           </div>
         </BaseNode>

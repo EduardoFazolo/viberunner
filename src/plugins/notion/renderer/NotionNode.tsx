@@ -4,6 +4,8 @@ import { NodeData, useNodeStore } from '../../../renderer/src/stores/nodeStore'
 import { BaseNode } from '../../../renderer/src/components/BaseNode'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
 import { useSessionStore } from '../../../renderer/src/stores/sessionStore'
+import { useActivationStore } from '../../../renderer/src/stores/activationStore'
+import { NodePlaceholder } from '../../../renderer/src/components/NodePlaceholder'
 import { useCanvasDrag } from '../../../renderer/src/hooks/useCanvasDrag'
 import { getPreparedNotionExternalDrag, primeNotionExternalDrag } from '../utils/notionDrag'
 import { NotionDropModal, NotionDropPayload } from './NotionDropModal'
@@ -282,6 +284,7 @@ interface Props {
 
 export function NotionNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack, focusedNodeId, setFocusedNodeId } = useNodeStore()
+  const isActivated = useActivationStore((s) => !!s.activated[node.id])
   const webviewRef = useRef<any>(null)
   const [preloadPath, setPreloadPath] = useState<string | null>(null)
 
@@ -637,7 +640,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
 
           {/* Webview area */}
           <div
-            style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: '#ffffff' }}
+            style={{ width: '100%', height: webviewHeight, position: 'relative', overflow: 'hidden', background: isActivated ? '#ffffff' : '#0d0d0d' }}
             onPointerDown={(e) => e.stopPropagation()}
             onDragOver={(e) => {
               if (e.dataTransfer.types.includes('application/canvaflow-session')) {
@@ -656,7 +659,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
               }
             }}
           >
-            {preloadPath && (
+            {isActivated && preloadPath && (
               <webview
                 key={partition}
                 ref={webviewRef}
@@ -667,14 +670,15 @@ export function NotionNode({ node }: Props): React.ReactElement {
                 style={{ width: '100%', height: '100%', display: 'flex' }}
               />
             )}
-            {isThumbnailMode && thumbnail && (
+            {isActivated && isThumbnailMode && thumbnail && (
               <img
                 src={thumbnail}
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 alt="Notion thumbnail"
               />
             )}
-            {focusedNodeId !== node.id && (
+            {!isActivated && <NodePlaceholder icon="notion" />}
+            {isActivated && focusedNodeId !== node.id && (
               <div
                 style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }}
                 onPointerDown={(e) => {

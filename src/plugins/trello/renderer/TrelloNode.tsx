@@ -4,6 +4,8 @@ import { NodeData, useNodeStore } from '../../../renderer/src/stores/nodeStore'
 import { BaseNode } from '../../../renderer/src/components/BaseNode'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
 import { useSessionStore } from '../../../renderer/src/stores/sessionStore'
+import { useActivationStore } from '../../../renderer/src/stores/activationStore'
+import { NodePlaceholder } from '../../../renderer/src/components/NodePlaceholder'
 import { useCanvasDrag } from '../../../renderer/src/hooks/useCanvasDrag'
 import { getPreparedTrelloExport, primeTrelloExport } from '../utils/trelloDrag'
 import { pasteIntoBrowser } from '../../../renderer/src/browserRegistry'
@@ -321,6 +323,7 @@ interface Props { node: NodeData }
 
 export function TrelloNode({ node }: Props): React.ReactElement {
   const { update, remove, bringToFront, sendToBack, focusedNodeId, setFocusedNodeId } = useNodeStore()
+  const isActivated = useActivationStore((s) => !!s.activated[node.id])
   const webviewRef = useRef<any>(null)
   const [preloadPath, setPreloadPath] = useState<string | null>(null)
 
@@ -769,7 +772,7 @@ export function TrelloNode({ node }: Props): React.ReactElement {
               }
             }}
           >
-            {preloadPath && (
+            {isActivated && preloadPath && (
               <webview
                 key={partition}
                 ref={webviewRef}
@@ -781,17 +784,18 @@ export function TrelloNode({ node }: Props): React.ReactElement {
                 style={{ width: '100%', height: '100%', display: 'flex' }}
               />
             )}
-            {isThumbnailMode && thumbnail && (
+            {isActivated && isThumbnailMode && thumbnail && (
               <img
                 src={thumbnail}
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 alt="Trello thumbnail"
               />
             )}
-            {showResizeOverlay && !isThumbnailMode && (
+            {isActivated && showResizeOverlay && !isThumbnailMode && (
               <div style={{ position: 'absolute', inset: 0, zIndex: 5, background: '#1D2125', pointerEvents: 'none' }} />
             )}
-            {focusedNodeId !== node.id && (
+            {!isActivated && <NodePlaceholder icon="trello" />}
+            {isActivated && focusedNodeId !== node.id && (
               <div
                 style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'default' }}
                 onPointerDown={(e) => {
