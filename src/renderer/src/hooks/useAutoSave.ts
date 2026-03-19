@@ -19,6 +19,7 @@ function nodeToRow(node: NodeData, workspaceId: string) {
     height: node.height,
     zIndex: node.zIndex,
     title: node.title,
+    minimized: node.minimized ? 1 : 0,
     contentScale: node.contentScale ?? 1,
     props: JSON.stringify(node.props),
     createdAt: Date.now(),

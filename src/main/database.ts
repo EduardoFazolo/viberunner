@@ -25,8 +25,9 @@ export interface NodeRow {
   height: number
   zIndex: number
   title: string
+  minimized: number // 0 | 1
   contentScale: number
-  props: string       // JSON
+  props: string     // JSON
   createdAt: number
   updatedAt: number
 }
@@ -91,9 +92,9 @@ function migrate(): void {
       height      REAL NOT NULL,
       zIndex      INTEGER NOT NULL,
       title       TEXT NOT NULL,
-      minimized    INTEGER NOT NULL DEFAULT 0,
+      minimized   INTEGER NOT NULL DEFAULT 0,
       contentScale REAL NOT NULL DEFAULT 1,
-      props        TEXT NOT NULL DEFAULT '{}',
+      props       TEXT NOT NULL DEFAULT '{}',
       createdAt   INTEGER NOT NULL,
       updatedAt   INTEGER NOT NULL
     );
@@ -119,10 +120,10 @@ function migrate(): void {
     );
   `)
 
-  // Additive migrations for existing databases
-  const cols = db.prepare("PRAGMA table_info(canvas_nodes)").all() as { name: string }[]
-  if (!cols.some(c => c.name === 'contentScale')) {
-    db.exec("ALTER TABLE canvas_nodes ADD COLUMN contentScale REAL NOT NULL DEFAULT 1")
+  // Incremental migrations — safe to run on existing databases
+  const cols = db.prepare('PRAGMA table_info(canvas_nodes)').all() as { name: string }[]
+  if (!cols.some((c) => c.name === 'contentScale')) {
+    db.exec('ALTER TABLE canvas_nodes ADD COLUMN contentScale REAL NOT NULL DEFAULT 1')
   }
 }
 
@@ -162,14 +163,14 @@ export function getNodes(workspaceId: string): NodeRow[] {
 export function saveNodes(workspaceId: string, nodes: NodeRow[]): void {
   const upsert = db.prepare(`
     INSERT INTO canvas_nodes
-      (id, workspaceId, type, x, y, width, height, zIndex, title, contentScale, props, createdAt, updatedAt)
+      (id, workspaceId, type, x, y, width, height, zIndex, title, minimized, contentScale, props, createdAt, updatedAt)
     VALUES
-      (@id, @workspaceId, @type, @x, @y, @width, @height, @zIndex, @title, @contentScale, @props, @createdAt, @updatedAt)
+      (@id, @workspaceId, @type, @x, @y, @width, @height, @zIndex, @title, @minimized, @contentScale, @props, @createdAt, @updatedAt)
     ON CONFLICT(id) DO UPDATE SET
       x = excluded.x, y = excluded.y,
       width = excluded.width, height = excluded.height,
       zIndex = excluded.zIndex, title = excluded.title,
-      contentScale = excluded.contentScale,
+      minimized = excluded.minimized, contentScale = excluded.contentScale,
       props = excluded.props, updatedAt = excluded.updatedAt
   `)
 

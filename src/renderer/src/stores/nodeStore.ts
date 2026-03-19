@@ -12,6 +12,7 @@ export interface NodeData {
   height: number
   zIndex: number
   title: string
+  minimized: boolean
   contentScale: number
   props: Record<string, unknown>
 }
@@ -88,6 +89,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
       ...DEFAULT_SIZES[type],
       zIndex,
       title: DEFAULT_TITLES[type],
+      minimized: false,
       contentScale: 1,
       props,
     }
