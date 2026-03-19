@@ -329,7 +329,7 @@ function WorkspaceSection({ workspace, isActive, nodes, onSwitch, onDelete }: Se
             </div>
           ) : (
             nodes.map((node) => (
-              <NodeItem key={node.id} node={node} workspaceActive={isActive} onSwitchWorkspace={onSwitch} />
+              <NodeItem key={node.id} node={node} workspaceActive={isActive} onSwitchWorkspace={onSwitch} workspaceId={workspace.id} />
             ))
           )}
         </div>
@@ -342,18 +342,30 @@ function WorkspaceSection({ workspace, isActive, nodes, onSwitch, onDelete }: Se
 // NodeItem
 // ---------------------------------------------------------------------------
 
-function NodeItem({ node, workspaceActive, onSwitchWorkspace }: {
+function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
   node: NodeSummary
   workspaceActive: boolean
   onSwitchWorkspace: () => void
+  workspaceId: string
 }): React.ReactElement {
   const [hovered, setHovered] = useState(false)
+  const { remove } = useNodeStore()
+  const { nodeSummaries, setNodeSummaries } = useWorkspaceStore()
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    // Remove from nodeStore (real nodes)
+    remove(node.id)
+    // Also remove from nodeSummaries directly (handles ghost nodes not in nodeStore)
+    const current = nodeSummaries[workspaceId] ?? []
+    setNodeSummaries(workspaceId, current.filter((n) => n.id !== node.id))
+  }
 
   return (
     <div
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        height: 26, padding: '0 8px 0 28px',
+        height: 26, padding: '0 4px 0 28px',
         cursor: 'pointer',
         background: hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
         borderRadius: 5,
@@ -371,6 +383,24 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace }: {
       }}>
         {node.title}
       </span>
+      {hovered && (
+        <div
+          onClick={handleDelete}
+          style={{
+            width: 16, height: 16,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            borderRadius: 3,
+            color: 'rgba(255,255,255,0.4)',
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.color = 'rgba(255,80,80,0.9)' }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.color = 'rgba(255,255,255,0.4)' }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </div>
+      )}
     </div>
   )
 }
