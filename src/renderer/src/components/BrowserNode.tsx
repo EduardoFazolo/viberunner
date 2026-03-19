@@ -781,9 +781,6 @@ export function BrowserNode({ node }: Props): React.ReactElement {
       </ContextMenuTrigger>
 
       <ContextMenuContent>
-        <ContextMenuItem onClick={() => update(node.id, { minimized: !node.minimized })}>
-          {node.minimized ? 'Restore' : 'Minimize'}
-        </ContextMenuItem>
         <ContextMenuSub trigger="Order">
           <ContextMenuItem onClick={() => bringToFront(node.id)}>Bring to Front</ContextMenuItem>
           <ContextMenuItem onClick={() => sendToBack(node.id)}>Send to Back</ContextMenuItem>

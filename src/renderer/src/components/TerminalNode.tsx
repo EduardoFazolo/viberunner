@@ -295,7 +295,7 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       window.terminal.resize(node.id, cols, rows)
     }, 50)
     return () => clearTimeout(timer)
-  }, [node.width, node.height, node.minimized, node.id])
+  }, [node.width, node.height, node.id])
 
   // Update font size when contentScale changes
   useEffect(() => {
@@ -331,9 +331,6 @@ export function TerminalNode({ node }: Props): React.ReactElement {
         </BaseNode>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem onClick={() => update(node.id, { minimized: !node.minimized })}>
-          {node.minimized ? 'Restore' : 'Minimize'}
-        </ContextMenuItem>
         <ContextMenuSub trigger="Order">
           <ContextMenuItem onClick={() => bringToFront(node.id)}>Bring to Front</ContextMenuItem>
           <ContextMenuItem onClick={() => sendToBack(node.id)}>Send to Back</ContextMenuItem>

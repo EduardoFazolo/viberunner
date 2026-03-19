@@ -38,7 +38,7 @@ export function Canvas(): React.ReactElement {
       let hitNode = null
       let maxZ = -Infinity
       for (const node of nodes.values()) {
-        const h = node.minimized ? 32 : node.height
+        const h = node.height
         if (wx >= node.x && wx <= node.x + node.width && wy >= node.y && wy <= node.y + h) {
           if (node.zIndex > maxZ) { maxZ = node.zIndex; hitNode = node }
         }

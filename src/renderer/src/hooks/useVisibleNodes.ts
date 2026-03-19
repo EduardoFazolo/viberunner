@@ -23,9 +23,6 @@ export function useVisibleNodes(nodes: Map<string, NodeData>, camera: Camera): N
       if (node.type === 'browser') return true
       if (pluginRegistry.get(node.type)?.keepAlive) return true
 
-      if (node.minimized) {
-        return node.x < right && node.x + node.width > left && node.y < bottom && node.y + 40 > top
-      }
       return (
         node.x < right &&
         node.x + node.width > left &&

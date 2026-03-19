@@ -22,7 +22,6 @@ function rowToNode(row: any): NodeData {
     height: row.height,
     zIndex: row.zIndex,
     title: row.title,
-    minimized: row.minimized === 1,
     contentScale: row.contentScale ?? 1,
     props: (() => {
       try { return JSON.parse(row.props) } catch { return {} }

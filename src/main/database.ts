@@ -25,7 +25,6 @@ export interface NodeRow {
   height: number
   zIndex: number
   title: string
-  minimized: number   // 0 | 1
   contentScale: number
   props: string       // JSON
   createdAt: number
@@ -163,14 +162,14 @@ export function getNodes(workspaceId: string): NodeRow[] {
 export function saveNodes(workspaceId: string, nodes: NodeRow[]): void {
   const upsert = db.prepare(`
     INSERT INTO canvas_nodes
-      (id, workspaceId, type, x, y, width, height, zIndex, title, minimized, contentScale, props, createdAt, updatedAt)
+      (id, workspaceId, type, x, y, width, height, zIndex, title, contentScale, props, createdAt, updatedAt)
     VALUES
-      (@id, @workspaceId, @type, @x, @y, @width, @height, @zIndex, @title, @minimized, @contentScale, @props, @createdAt, @updatedAt)
+      (@id, @workspaceId, @type, @x, @y, @width, @height, @zIndex, @title, @contentScale, @props, @createdAt, @updatedAt)
     ON CONFLICT(id) DO UPDATE SET
       x = excluded.x, y = excluded.y,
       width = excluded.width, height = excluded.height,
       zIndex = excluded.zIndex, title = excluded.title,
-      minimized = excluded.minimized, contentScale = excluded.contentScale,
+      contentScale = excluded.contentScale,
       props = excluded.props, updatedAt = excluded.updatedAt
   `)
 

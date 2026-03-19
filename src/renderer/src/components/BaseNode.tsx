@@ -178,7 +178,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
         boxShadow: focused
           ? '0 8px 32px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.4), 0 0 0 1.5px rgba(167,139,250,0.5)'
           : '0 8px 32px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35)',
-        overflow: node.minimized ? 'visible' : 'hidden',
+        overflow: 'hidden',
         transition: 'box-shadow 0.15s',
       }}
       onPointerDown={(e) => { bringToFront(node.id); setFocusedNodeId(node.id); e.stopPropagation() }}
@@ -194,11 +194,9 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
           paddingRight: 8,
           gap: 4,
           background: focused ? '#1c1c1c' : '#161616',
-          borderRadius: node.minimized ? 8 : '8px 8px 0 0',
+          borderRadius: '8px 8px 0 0',
           border: focused ? '1px solid rgba(167,139,250,0.25)' : '1px solid rgba(255,255,255,0.07)',
-          borderBottom: node.minimized
-            ? (focused ? '1px solid rgba(167,139,250,0.25)' : '1px solid rgba(255,255,255,0.07)')
-            : '1px solid rgba(255,255,255,0.05)',
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
           transition: 'background 0.15s, border-color 0.15s',
           cursor: 'grab',
           userSelect: 'none',
@@ -247,21 +245,6 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
           <svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 2v6M2 5h6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
         </button>
 
-        {/* Minimize button */}
-        <button
-          style={{ ...btnBase }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); update(node.id, { minimized: !node.minimized }) }}
-          title={node.minimized ? 'Restore' : 'Minimize'}
-          onMouseEnter={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnHover)}
-          onMouseLeave={(e) => Object.assign((e.currentTarget as HTMLElement).style, btnBase)}
-        >
-          {node.minimized
-            ? <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5h6M5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
-            : <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 4h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-          }
-        </button>
-
         {/* Close button */}
         <button
           style={{ ...btnBase }}
@@ -278,24 +261,21 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
       </div>
 
       {/* Content */}
-      {!node.minimized && (
-        <div style={{
-          height: node.height - 32,
-          position: 'relative',
-          overflow: 'hidden',
-          background: '#0d0d0d',
-          border: '1px solid rgba(255,255,255,0.07)',
-          borderTop: 'none',
-          borderRadius: '0 0 8px 8px',
-          zoom: noCssZoom ? 1 : (node.contentScale ?? 1),
-        }}>
-          {children}
-        </div>
-      )}
+      <div style={{
+        height: node.height - 32,
+        position: 'relative',
+        overflow: 'hidden',
+        background: '#0d0d0d',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderTop: 'none',
+        borderRadius: '0 0 8px 8px',
+        zoom: noCssZoom ? 1 : (node.contentScale ?? 1),
+      }}>
+        {children}
+      </div>
 
       {/* Resize handle */}
-      {!node.minimized && (
-        <div
+      <div
           style={{
             position: 'absolute',
             bottom: 0,
@@ -317,7 +297,6 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
             <path d="M1 6h5V1" stroke="white" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
           </svg>
         </div>
-      )}
     </div>
   )
 }

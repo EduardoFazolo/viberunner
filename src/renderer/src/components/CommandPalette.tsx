@@ -51,7 +51,7 @@ function jumpToNode(node: NodeData): void {
   useCameraStore.getState().setCamera({
     zoom,
     x: vw / 2 - (node.x + node.width / 2) * zoom,
-    y: vh / 2 - (node.y + (node.minimized ? 16 : node.height / 2)) * zoom,
+    y: vh / 2 - (node.y + node.height / 2) * zoom,
   })
 }
 

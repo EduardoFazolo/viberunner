@@ -340,9 +340,6 @@ export function NoteNode({ node }: Props): React.ReactElement {
         <ContextMenuItem onClick={toggleToolbar}>
           {showToolbar ? 'Hide Toolbar' : 'Show Toolbar'}
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => update(node.id, { minimized: !node.minimized })}>
-          {node.minimized ? 'Restore' : 'Minimize'}
-        </ContextMenuItem>
         <ContextMenuSub trigger="Order">
           <ContextMenuItem onClick={() => bringToFront(node.id)}>Bring to Front</ContextMenuItem>
           <ContextMenuItem onClick={() => sendToBack(node.id)}>Send to Back</ContextMenuItem>
