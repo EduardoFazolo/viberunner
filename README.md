@@ -2,6 +2,11 @@
 
 An infinite canvas workspace for developers. Arrange terminals, browsers, code editors, notes, and external tools freely on a 2D canvas — zoom, pan, and build your own layout.
 
+
+https://github.com/user-attachments/assets/7299ce7f-9f99-4211-a5c1-25d354e1d70f
+
+
+
 ---
 
 ## Features
