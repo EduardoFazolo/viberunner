@@ -623,7 +623,7 @@ export function TrelloNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('did-navigate-in-page', onNavigate)
       wv.removeEventListener('ipc-message', onIpcMessage)
     }
-  }, [node.id, node.width, node.height, preloadPath, update, startDrag, nudge, cancel, apiKey, token])
+  }, [node.id, node.width, node.height, preloadPath, update, startDrag, nudge, cancel, apiKey, token, isActivated])
 
   const handleReload = useCallback(() => {
     if (!webviewRef.current) return

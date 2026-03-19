@@ -515,7 +515,7 @@ export function BrowserNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('new-window', onNewWindow)
       wv.removeEventListener('ipc-message', onIpcMessage)
     }
-  }, [node.id, node.x, node.y, partition, canvasPreloadPath, update, add])
+  }, [node.id, node.x, node.y, partition, canvasPreloadPath, update, add, isActivated])
 
 
   const handleBack = useCallback(() => {

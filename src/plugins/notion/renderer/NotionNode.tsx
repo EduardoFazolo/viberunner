@@ -546,7 +546,7 @@ export function NotionNode({ node }: Props): React.ReactElement {
       wv.removeEventListener('page-title-updated', onTitle)
       wv.removeEventListener('ipc-message', onIpcMessage)
     }
-  }, [node.id, partition, preloadPath, update, startDrag, nudge, cancel])
+  }, [node.id, partition, preloadPath, update, startDrag, nudge, cancel, isActivated])
 
   const handleReload = useCallback(() => {
     if (!webviewRef.current) return
