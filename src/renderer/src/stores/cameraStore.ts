@@ -62,8 +62,19 @@ export const useCameraStore = create<CameraStore>((set, get) => ({
   }),
 }))
 
+let _animHandle: number | null = null
+
+/** Cancel any in-progress animateCameraTo animation. */
+export function cancelCameraAnimation(): void {
+  if (_animHandle !== null) {
+    cancelAnimationFrame(_animHandle)
+    _animHandle = null
+  }
+}
+
 /** Smoothly animate the camera to a target state over `durationMs` milliseconds. */
 export function animateCameraTo(target: Camera, durationMs = 320): void {
+  cancelCameraAnimation()
   const start = useCameraStore.getState().camera
   const startTime = performance.now()
   function ease(t: number): number { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t }
@@ -75,9 +86,13 @@ export function animateCameraTo(target: Camera, durationMs = 320): void {
       y: start.y + (target.y - start.y) * e,
       zoom: start.zoom + (target.zoom - start.zoom) * e,
     })
-    if (t < 1) requestAnimationFrame(step)
+    if (t < 1) {
+      _animHandle = requestAnimationFrame(step)
+    } else {
+      _animHandle = null
+    }
   }
-  requestAnimationFrame(step)
+  _animHandle = requestAnimationFrame(step)
 }
 
 export function worldToScreen(wx: number, wy: number, camera: Camera) {

@@ -3,7 +3,7 @@ import { Camera } from '../stores/cameraStore'
 import { NodeData } from '../stores/nodeStore'
 import { pluginRegistry } from '../../../plugins/types'
 
-const CULL_PADDING = 200 // world-space px padding to prevent pop-in
+const CULL_PADDING_SCREEN = 300 // screen-space px padding to prevent pop-in (constant regardless of zoom)
 
 export function useVisibleNodes(nodes: Map<string, NodeData>, camera: Camera): NodeData[] {
   return useMemo(() => {
@@ -11,11 +11,14 @@ export function useVisibleNodes(nodes: Map<string, NodeData>, camera: Camera): N
     const vw = window.innerWidth
     const vh = window.innerHeight
 
+    // Convert screen-space padding to world-space so it's consistent at all zoom levels
+    const pad = CULL_PADDING_SCREEN / zoom
+
     // Viewport rect in world space (with padding)
-    const left = (-x / zoom) - CULL_PADDING
-    const top = (-y / zoom) - CULL_PADDING
-    const right = (vw - x) / zoom + CULL_PADDING
-    const bottom = (vh - y) / zoom + CULL_PADDING
+    const left = (-x / zoom) - pad
+    const top = (-y / zoom) - pad
+    const right = (vw - x) / zoom + pad
+    const bottom = (vh - y) / zoom + pad
 
     return Array.from(nodes.values()).filter((node) => {
       // Never cull nodes that own live processes or webviews

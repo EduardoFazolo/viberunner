@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useCameraStore, updateCursorPos } from '../stores/cameraStore'
+import { useCameraStore, updateCursorPos, cancelCameraAnimation } from '../stores/cameraStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { zoomFitNode, zoomExit } from '../utils/zoomFocus'
@@ -69,6 +69,7 @@ export function Canvas(): React.ReactElement {
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+      cancelCameraAnimation()
       const rect = el.getBoundingClientRect()
       const localX = e.clientX - rect.left
       const localY = e.clientY - rect.top
