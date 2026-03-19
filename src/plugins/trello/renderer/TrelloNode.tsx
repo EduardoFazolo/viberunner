@@ -349,6 +349,17 @@ export function TrelloNode({ node }: Props): React.ReactElement {
   const [isThumbnailMode, setIsThumbnailMode] = useState(useCameraStore.getState().camera.zoom < 0.3)
   const [thumbnail, setThumbnail] = useState<string | null>(null)
 
+  // Suppress the white flash that Electron shows when the webview surface is resized
+  const [showResizeOverlay, setShowResizeOverlay] = useState(false)
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const resizeMountedRef = useRef(false)
+  useEffect(() => {
+    if (!resizeMountedRef.current) { resizeMountedRef.current = true; return }
+    if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
+    setShowResizeOverlay(true)
+    resizeTimerRef.current = setTimeout(() => setShowResizeOverlay(false), 120)
+  }, [node.width, node.height])
+
   // Load credentials from appState on mount
   useEffect(() => {
     Promise.all([
@@ -406,6 +417,10 @@ export function TrelloNode({ node }: Props): React.ReactElement {
   // Drag hook
   // ---------------------------------------------------------------------------
 
+  const execOnWebview = useCallback((js: string) => {
+    try { (webviewRef.current as any)?.executeJavaScript(js) } catch {}
+  }, [])
+
   const { isDragging, ghostX, ghostY, startDrag, nudge, cancel } = useCanvasDrag({
     onMove: useCallback((clientX: number, clientY: number) => {
       setDropTarget(getDropTargetAt(clientX, clientY))
@@ -413,6 +428,8 @@ export function TrelloNode({ node }: Props): React.ReactElement {
 
     onDrop: useCallback(async (clientX: number, clientY: number) => {
       setDropTarget(null)
+      // Drop happened outside the webview — reset drag state in preload
+      execOnWebview('window.__canvaflow_cancelDrag&&window.__canvaflow_cancelDrag()')
       const data = dragDataRef.current
       if (!data) return
       dragDataRef.current = null
@@ -447,7 +464,7 @@ export function TrelloNode({ node }: Props): React.ReactElement {
       const card = prefetchedCard.current
       prefetchedCard.current = null
       setPendingDrop({ cardId, title, clientX, clientY, prefetchedCard: card, apiKey, token, partition })
-    }, [apiKey, token]),
+    }, [apiKey, token, execOnWebview]),
   })
 
   // ---------------------------------------------------------------------------
@@ -579,6 +596,12 @@ export function TrelloNode({ node }: Props): React.ReactElement {
         const scaleX = vpW > 0 ? rect.width / vpW : rect.width / node.width
         const scaleY = vpH > 0 ? rect.height / vpH : rect.height / (node.height - TITLE_H - TOOLBAR_H)
         nudge(dx * scaleX, dy * scaleY)
+      } else if (channel === 'trello:drag-end') {
+        // Pointer released inside the webview — cancel the host-side ghost
+        prefetchedCard.current = null
+        dragDataRef.current = null
+        setDropTarget(null)
+        cancel()
       } else if (channel === 'trello:drag-cancel') {
         prefetchedCard.current = null
         dragDataRef.current = null
@@ -764,6 +787,9 @@ export function TrelloNode({ node }: Props): React.ReactElement {
                 style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 alt="Trello thumbnail"
               />
+            )}
+            {showResizeOverlay && !isThumbnailMode && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 5, background: '#1D2125', pointerEvents: 'none' }} />
             )}
             {focusedNodeId !== node.id && (
               <div
