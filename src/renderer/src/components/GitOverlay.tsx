@@ -111,9 +111,8 @@ function fileName(filePath: string): string {
 }
 
 function fileDir(filePath: string): string {
-  const parts = filePath.split('/')
-  if (parts.length <= 1) return ''
-  return parts.slice(0, -1).join('/') + '/'
+  const i = filePath.lastIndexOf('/')
+  return i >= 0 ? filePath.slice(0, i) : ''
 }
 
 // ─── Subcomponents ────────────────────────────────────────────────────────────
@@ -163,23 +162,34 @@ function FileRow({ file, gitPath, onOpenDiff }: FileRowProps): React.ReactElemen
         {char}
       </span>
 
-      {/* File path */}
+      {/* Filename — never truncated */}
       <span style={{
         fontSize: 11,
-        color: hovered ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.6)',
+        color: hovered ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.72)',
         fontFamily: 'ui-monospace, Menlo, monospace',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        minWidth: 0,
-        flex: 1,
+        flexShrink: 0,
         transition: 'color 0.1s ease',
       }}>
-        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>
-          {fileDir(file.path)}
-        </span>
         {fileName(file.path)}
       </span>
+
+      {/* Directory — dim, truncates on the right */}
+      {fileDir(file.path) && (
+        <span style={{
+          fontSize: 10,
+          color: 'rgba(255,255,255,0.28)',
+          fontFamily: 'ui-monospace, Menlo, monospace',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          minWidth: 0,
+          flex: 1,
+        }}
+          title={file.path}
+        >
+          {fileDir(file.path)}
+        </span>
+      )}
 
       {/* Staged indicator */}
       {staged && (
