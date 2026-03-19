@@ -9,6 +9,7 @@ import { useNodeStore } from '../stores/nodeStore'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { registerTerminal, unregisterTerminal } from '../terminalRegistry'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useActivityStore } from '../stores/activityStore'
 import { normalizeClientPointForElement } from '../utils/terminalMouse'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -181,8 +182,12 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     const shell = (node.props.shell as string) || appSettings.shell
     window.terminal.create(node.id, workspaceId, cwd, shell)
 
-    // PTY → xterm
-    const unsub = window.terminal.onData(node.id, (data) => term.write(data))
+    // PTY → xterm (also signals activity to the navbar indicator)
+    const unsub = window.terminal.onData(node.id, (data) => {
+      term.write(data)
+      // Mark this terminal active; auto-idles after 30s of silence
+      useActivityStore.getState().markActive(node.id)
+    })
 
     // xterm → PTY
     term.onData((data) => window.terminal.write(node.id, data))

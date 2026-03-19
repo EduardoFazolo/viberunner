@@ -54,6 +54,15 @@ export function registerGitHandlers(ipc: IpcMainLike): void {
     await git(rootPath).commit(message)
   })
 
+  ipc.handle('git:push', async (_e, rootPath: string): Promise<{ error?: string }> => {
+    try {
+      await git(rootPath).push()
+      return {}
+    } catch (e: any) {
+      return { error: e?.message ?? String(e) }
+    }
+  })
+
   ipc.handle('git:branches', async (_e, rootPath: string) => {
     try {
       const status = await git(rootPath).status()

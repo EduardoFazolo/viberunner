@@ -109,6 +109,9 @@ contextBridge.exposeInMainWorld('git', {
     ipcRenderer.invoke('git:logGraph', rootPath, maxCount),
   discard: (rootPath: string, filePaths: string[]): Promise<void> =>
     ipcRenderer.invoke('git:discard', rootPath, filePaths),
+
+  push: (rootPath: string): Promise<{ error?: string }> =>
+    ipcRenderer.invoke('git:push', rootPath),
   branches: (rootPath: string): Promise<GitBranchEntry[]> =>
     ipcRenderer.invoke('git:branches', rootPath),
   checkoutBranch: (rootPath: string, name: string, createNew: boolean): Promise<void> =>

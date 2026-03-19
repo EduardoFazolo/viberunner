@@ -629,7 +629,19 @@ export function MonacoNode({ node }: Props): React.ReactElement {
 
   const openDiff = useCallback((filePath: string, original: string | null, modified: string, lang: string) => {
     setDiffState({ path: filePath, original, modified, lang })
+    // Switch to git panel so the diff is visible
+    setSidebarTab('git')
   }, [])
+
+  // External diff trigger: GitOverlay sets node.props.pendingDiff to open a diff without
+  // needing direct access to this component's local state.
+  useEffect(() => {
+    const pd = node.props.pendingDiff as { path: string; original: string | null; modified: string; lang: string } | undefined
+    if (!pd) return
+    openDiff(pd.path, pd.original, pd.modified, pd.lang)
+    // Clear the prop so re-opening the same file still fires
+    update(node.id, { props: { ...node.props, pendingDiff: null } })
+  }, [node.props.pendingDiff])
 
   const closeTab = useCallback((path: string) => {
     setTabs(prev => {

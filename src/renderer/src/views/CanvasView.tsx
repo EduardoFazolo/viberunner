@@ -1,5 +1,6 @@
 import React from 'react'
 import { Canvas } from '../components/Canvas'
+import { GitOverlay } from '../components/GitOverlay'
 
 export function CanvasView(): React.ReactElement {
   return (
@@ -8,6 +9,7 @@ export function CanvasView(): React.ReactElement {
       style={{ flex: 1, width: '100%', height: '100%', position: 'relative' }}
     >
       <Canvas />
+      <GitOverlay />
     </div>
   )
 }

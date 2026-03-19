@@ -163,6 +163,7 @@ declare global {
       discard: (rootPath: string, filePaths: string[]) => Promise<void>
       branches: (rootPath: string) => Promise<Array<{ name: string; author: string; subject: string; timeAgo: string; isCurrent: boolean }>>
       checkoutBranch: (rootPath: string, name: string, createNew: boolean) => Promise<void>
+      push: (rootPath: string) => Promise<{ error?: string }>
     }
 
     fs: {
