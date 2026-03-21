@@ -11,6 +11,10 @@ const views = new Map<string, ViewEntry>()
 const boundsCache = new Map<string, { x: number; y: number; width: number; height: number }>()
 const visibilityState = new Map<string, boolean>()
 
+// When false (e.g. user switched to Settings tab), all views are parked off-screen
+// regardless of their individual visibilityState.
+let canvasActive = true
+
 // The left boundary of the canvas content area (right edge of the sidebar).
 // Enforced here so stale IPC bounds from the renderer can never cover the sidebar.
 let canvasLeft = 240
@@ -165,9 +169,8 @@ export function updateBrowserViewBounds(
   const entry = views.get(nodeId)
   if (!entry) return
   boundsCache.set(nodeId, bounds)
-  // Only move the view if it's currently shown — if hidden (off-screen), the
-  // cached bounds will be applied when setBrowserViewVisible(true) is called.
-  if (visibilityState.get(nodeId)) {
+  // Only move the view if it's currently shown and the canvas is active.
+  if (visibilityState.get(nodeId) && canvasActive) {
     applyBounds(entry, bounds)
   }
 }
@@ -176,7 +179,7 @@ export function setBrowserViewVisible(nodeId: string, visible: boolean): void {
   const entry = views.get(nodeId)
   if (!entry) return
   visibilityState.set(nodeId, visible)
-  if (visible) {
+  if (visible && canvasActive) {
     // Move to last known bounds, enforcing the canvas left boundary.
     const cached = boundsCache.get(nodeId)
     if (cached) applyBounds(entry, cached)
@@ -184,6 +187,24 @@ export function setBrowserViewVisible(nodeId: string, visible: boolean): void {
     // Move off-screen instead of hiding — preserves compositor layer so the
     // content doesn't need to repaint when shown again (avoids white flash).
     entry.view.setBounds(OFF_SCREEN)
+  }
+}
+
+export function setCanvasActive(active: boolean): void {
+  canvasActive = active
+  if (active) {
+    // Restore bounds for any view that was individually marked visible.
+    for (const [nodeId, entry] of views) {
+      if (visibilityState.get(nodeId)) {
+        const cached = boundsCache.get(nodeId)
+        if (cached) applyBounds(entry, cached)
+      }
+    }
+  } else {
+    // Park every view off-screen.
+    for (const entry of views.values()) {
+      entry.view.setBounds(OFF_SCREEN)
+    }
   }
 }
 
@@ -265,6 +286,10 @@ export function setupBrowserViewHandlers(): void {
 
   ipcMain.on('browser:set-canvas-left', (_e, left: number) => {
     setCanvasLeft(left)
+  })
+
+  ipcMain.on('browser:set-canvas-active', (_e, active: boolean) => {
+    setCanvasActive(active)
   })
 
   ipcMain.on('browser:set-visible', (_e, nodeId: string, visible: boolean) => {

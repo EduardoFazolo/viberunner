@@ -160,6 +160,8 @@ contextBridge.exposeInMainWorld('browser', {
     ipcRenderer.invoke('browser:change-session', nodeId, partition, url, bounds),
   setCanvasLeft: (left: number): void =>
     ipcRenderer.send('browser:set-canvas-left', left),
+  setCanvasActive: (active: boolean): void =>
+    ipcRenderer.send('browser:set-canvas-active', active),
   updateBounds: (nodeId: string, bounds: { x: number; y: number; width: number; height: number }): void =>
     ipcRenderer.send('browser:update-bounds', nodeId, bounds),
   setVisible: (nodeId: string, visible: boolean): void =>

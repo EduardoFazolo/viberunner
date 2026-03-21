@@ -62,6 +62,13 @@ export default function App(): React.ReactElement {
 
   useKeyboardShortcuts({ onSearch: openPalette, onSettings: openSettings })
 
+  // Hide all native browser views when a non-canvas tab is active.
+  useEffect(() => {
+    return useViewStore.subscribe((s) => {
+      window.browser.setCanvasActive(s.activeId === 'canvas')
+    })
+  }, [])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden' }}>
       <TitleBar
