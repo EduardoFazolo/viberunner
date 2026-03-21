@@ -29,7 +29,7 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
           const vh = document.documentElement.clientHeight / 2
           const wx = (vw - camera.x) / camera.zoom
           const wy = (vh - camera.y) / camera.zoom
-          useNodeStore.getState().add('browser', wx - 400, wy - 300)
+          useNodeStore.getState().add('browserv2', wx - 400, wy - 300)
           break
         }
         case 'newFiles': {

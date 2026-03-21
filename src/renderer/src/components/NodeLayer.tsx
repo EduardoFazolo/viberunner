@@ -4,6 +4,7 @@ import { useCameraStore } from '../stores/cameraStore'
 import { useVisibleNodes } from '../hooks/useVisibleNodes'
 import { TerminalNode } from './TerminalNode'
 import { BrowserNode } from './BrowserNode'
+import { BrowserNodeV2 } from './BrowserNodeV2'
 import { FilesNode } from './FilesNode'
 import { NoteNode } from './NoteNode'
 import { pluginRegistry } from '../../../plugins/types'
@@ -11,6 +12,7 @@ import { pluginRegistry } from '../../../plugins/types'
 function NodeRenderer({ node }: { node: NodeData }): React.ReactElement | null {
   if (node.type === 'terminal') return <TerminalNode key={node.id} node={node} />
   if (node.type === 'browser') return <BrowserNode key={node.id} node={node} />
+  if (node.type === 'browserv2') return <BrowserNodeV2 key={node.id} node={node} />
   if (node.type === 'files') return <FilesNode key={node.id} node={node} />
   if (node.type === 'note') return <NoteNode key={node.id} node={node} />
   const plugin = pluginRegistry.get(node.type)
@@ -21,7 +23,7 @@ function NodeRenderer({ node }: { node: NodeData }): React.ReactElement | null {
 const MemoNodeRenderer = React.memo(NodeRenderer, (prev, next) => prev.node === next.node)
 
 function shouldKeepAlive(node: NodeData): boolean {
-  if (node.type === 'terminal' || node.type === 'browser') return true
+  if (node.type === 'terminal' || node.type === 'browser' || node.type === 'browserv2') return true
   return pluginRegistry.get(node.type)?.keepAlive ?? false
 }
 

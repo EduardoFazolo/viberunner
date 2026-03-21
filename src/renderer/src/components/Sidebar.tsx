@@ -1,12 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useWorkspaceStore, Workspace, NodeSummary } from '../stores/workspaceStore'
 import { useViewStore } from '../stores/viewStore'
-import { useNodeStore } from '../stores/nodeStore'
+import { useNodeStore, NodeData } from '../stores/nodeStore'
 import { useTemplateStore, NodeTemplate } from '../stores/templateStore'
 import { useSessionStore, BrowserSession } from '../stores/sessionStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { loadWorkspaceCanvas } from '../hooks/useWorkspaceInit'
 import { getCanvasRect } from '../utils/canvasUtils'
+
+function jumpToNode(node: NodeData): void {
+  const zoom = Math.max(useCameraStore.getState().camera.zoom, 0.7)
+  const { width: vw, height: vh } = getCanvasRect()
+  useCameraStore.getState().setCamera({
+    zoom,
+    x: vw / 2 - (node.x + node.width / 2) * zoom,
+    y: vh / 2 - (node.y + node.height / 2) * zoom,
+  })
+  useNodeStore.getState().setFocusedNodeId(node.id)
+}
 
 export const SIDEBAR_W = 240
 
@@ -45,7 +56,7 @@ function NodeTypeIcon({ type }: { type: string }): React.ReactElement {
       </svg>
     )
   }
-  if (type === 'browser') {
+  if (type === 'browser' || type === 'browserv2') {
     return (
       <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
         <rect x="1" y="1" width="9" height="9" rx="2" stroke="rgba(255,255,255,0.35)" strokeWidth="1.1"/>
@@ -349,40 +360,66 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
   workspaceId: string
 }): React.ReactElement {
   const [hovered, setHovered] = useState(false)
-  const { remove } = useNodeStore()
+  const { remove, focusedNodeId } = useNodeStore()
   const { nodeSummaries, setNodeSummaries } = useWorkspaceStore()
+  const isFocused = workspaceActive && focusedNodeId === node.id
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
-    // Remove from nodeStore (real nodes)
     remove(node.id)
-    // Also remove from nodeSummaries directly (handles ghost nodes not in nodeStore)
     const current = nodeSummaries[workspaceId] ?? []
     setNodeSummaries(workspaceId, current.filter((n) => n.id !== node.id))
+  }
+
+  const handleClick = async () => {
+    if (!workspaceActive) {
+      onSwitchWorkspace()
+      await loadWorkspaceCanvas(workspaceId)
+    }
+    const liveNode = useNodeStore.getState().nodes.get(node.id)
+    if (liveNode) jumpToNode(liveNode)
   }
 
   return (
     <div
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        height: 26, padding: '0 4px 0 28px',
+        minHeight: 26, padding: node.subtitle ? '3px 4px 3px 28px' : '0 4px 0 28px',
         cursor: 'pointer',
         background: hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
         borderRadius: 5,
         margin: '0 4px',
+        position: 'relative',
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => { if (!workspaceActive) onSwitchWorkspace() }}
+      onClick={handleClick}
     >
+      {isFocused && (
+        <div style={{
+          position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+          width: 2, height: 12, borderRadius: 2, background: '#a78bfa',
+        }} />
+      )}
       <NodeTypeIcon type={node.type} />
-      <span style={{
-        flex: 1, fontSize: 11.5,
-        color: hovered ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.38)',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>
-        {node.title}
-      </span>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <span style={{
+          fontSize: 11.5,
+          color: hovered ? 'rgba(255,255,255,0.65)' : isFocused ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.38)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {node.title}
+        </span>
+        {node.subtitle && (
+          <span style={{
+            fontSize: 10, color: 'rgba(255,255,255,0.2)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            lineHeight: 1.2,
+          }}>
+            {node.subtitle}
+          </span>
+        )}
+      </div>
       {hovered && (
         <div
           onClick={handleDelete}
@@ -427,7 +464,7 @@ export function Sidebar(): React.ReactElement {
       if (!id) return
       const summaries = Array.from(state.nodes.values()).map((n) => ({
         id: n.id, title: n.title, type: n.type,
-        subtitle: n.type === 'browser'
+        subtitle: (n.type === 'browser' || n.type === 'browserv2')
           ? (n.props.url as string | undefined)
           : n.type === 'terminal'
             ? (n.props.cwd as string | undefined)

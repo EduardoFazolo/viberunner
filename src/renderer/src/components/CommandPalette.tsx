@@ -29,7 +29,7 @@ function TypeIcon({ type }: { type: string }) {
       </span>
     )
   }
-  if (type === 'browser') {
+  if (type === 'browser' || type === 'browserv2') {
     return (
       <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ opacity: 0.35, flexShrink: 0 }}>
         <rect x="1" y="1" width="11" height="11" rx="2.5" stroke="white" strokeWidth="1.2"/>

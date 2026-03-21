@@ -36,7 +36,7 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
           <span style={{ flex: 1 }}>New Terminal</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘T</span>
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => add('browser', clickWorldPos.current.x - 400, clickWorldPos.current.y - 300)}>
+        <ContextMenuItem onClick={() => add('browserv2', clickWorldPos.current.x - 400, clickWorldPos.current.y - 300)}>
           <span style={{ flex: 1 }}>New Browser</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘B</span>
         </ContextMenuItem>

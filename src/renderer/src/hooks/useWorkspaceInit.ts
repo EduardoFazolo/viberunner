@@ -102,7 +102,7 @@ export function useWorkspaceInit(): void {
             const rows = await window.canvas.getNodes(ws.id)
             return [ws.id, rows.map((r: any) => {
               let subtitle: string | undefined
-              try { subtitle = r.type === 'browser' ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
+              try { subtitle = (r.type === 'browser' || r.type === 'browserv2') ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
               return { id: r.id, title: r.title, type: r.type, subtitle }
             })] as const
           } catch {
@@ -157,7 +157,7 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
         workspaceId,
         nodeRows.map((r: any) => {
           let subtitle: string | undefined
-          try { subtitle = r.type === 'browser' ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
+          try { subtitle = (r.type === 'browser' || r.type === 'browserv2') ? (JSON.parse(r.props)?.url ?? undefined) : undefined } catch {}
           return { id: r.id, title: r.title, type: r.type, subtitle }
         })
       )

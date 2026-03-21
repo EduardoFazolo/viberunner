@@ -6,6 +6,7 @@ import { initDatabase, getAllNodeIds } from './database'
 import { setupWorkspaceHandlers } from './workspace'
 import { tmuxManager } from './tmux'
 import { setupBrowserSession } from './browserSession'
+import { setupBrowserViewHandlers, destroyAllBrowserViews } from './browserViewManager'
 import { registerNotionHandlers } from '../plugins/notion/main/handlers'
 import { registerTrelloHandlers } from '../plugins/trello/main/handlers'
 import { registerGitHandlers } from '../plugins/monaco/main/gitHandlers'
@@ -55,6 +56,7 @@ function createWindow(): void {
 
   // Kill all PTYs before the webContents is destroyed so onData never fires into a dead window
   mainWindow.on('close', () => {
+    destroyAllBrowserViews()
     killAllPtys()
   })
 
@@ -117,6 +119,7 @@ app.whenReady().then(async () => {
     console.error('[main] Database init failed, running without persistence:', err)
   }
   setupWorkspaceHandlers()
+  setupBrowserViewHandlers()
   registerNotionHandlers(ipcMain)
   registerTrelloHandlers(ipcMain)
   registerGitHandlers(ipcMain)
