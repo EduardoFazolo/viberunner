@@ -21,6 +21,7 @@ export default defineConfig({
           notionWebview: 'src/plugins/notion/preload/notionWebview.ts',
           canvasWebview: 'src/plugins/browser/preload/canvasWebview.ts',
           trelloWebview: 'src/plugins/trello/preload/trelloWebview.ts',
+          lovableWebview: 'src/plugins/lovable/preload/lovableWebview.ts',
         }
       }
     }

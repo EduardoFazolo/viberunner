@@ -78,6 +78,15 @@ declare global {
       getCursorPos: () => Promise<{ x: number; y: number }>
     }
 
+    lovable: {
+      preloadPath: () => Promise<string>
+      reportStatus: (nodeId: string, status: { loggedIn: boolean; url: string }) => Promise<void>
+      onInjectPrompt: (cb: (nodeId: string | null, prompt: string) => void) => () => void
+      createSessionDir: () => Promise<string>
+      checkMcpGlobal: () => Promise<boolean>
+      installMcpGlobal: () => Promise<void>
+    }
+
     notion: {
       fetchImage: (partition: string, imageUrl: string, blockId?: string) => Promise<string>
       fetchPage: (partition: string, pageId: string) => Promise<{

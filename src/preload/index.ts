@@ -198,6 +198,29 @@ contextBridge.exposeInMainWorld('trello', {
     ipcRenderer.invoke('trello:prepareExport', apiKey, token, cardId),
 })
 
+contextBridge.exposeInMainWorld('lovable', {
+  preloadPath: (): Promise<string> =>
+    ipcRenderer.invoke('lovable:preload-path'),
+
+  reportStatus: (nodeId: string, status: { loggedIn: boolean; url: string }): Promise<void> =>
+    ipcRenderer.invoke('lovable:report-status', nodeId, status),
+
+  createSessionDir: (): Promise<string> =>
+    ipcRenderer.invoke('lovable:create-session-dir'),
+
+  onInjectPrompt: (callback: (nodeId: string | null, prompt: string) => void): () => void => {
+    const listener = (_: unknown, nodeId: string | null, prompt: string) => callback(nodeId, prompt)
+    ipcRenderer.on('lovable:inject-prompt', listener)
+    return () => ipcRenderer.removeListener('lovable:inject-prompt', listener)
+  },
+
+  checkMcpGlobal: (): Promise<boolean> =>
+    ipcRenderer.invoke('lovable:check-mcp-global'),
+
+  installMcpGlobal: (): Promise<void> =>
+    ipcRenderer.invoke('lovable:install-mcp-global'),
+})
+
 contextBridge.exposeInMainWorld('notion', {
   fetchPage: (partition: string, pageId: string): Promise<NotionPageChunk> =>
     ipcRenderer.invoke('notion:fetchPage', partition, pageId),

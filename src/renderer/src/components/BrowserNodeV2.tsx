@@ -622,6 +622,11 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
           setUrlBar(url)
           webviewSrcRef.current = url
           update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url } })
+          // Report to MCP bridge when on lovable.dev
+          if (url.includes('lovable.dev') && window.lovable) {
+            const loggedIn = !url.includes('/auth/') && !url.includes('/sign-in') && !url.includes('/login')
+            window.lovable.reportStatus(node.id, { loggedIn, url }).catch(() => {})
+          }
         }
       } else if (eventName === 'page-title-updated') {
         const title = (data as any).title as string
@@ -782,30 +787,74 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
       <ContextMenuTrigger>
         <BaseNode node={node} noCssZoom titleExtra={(() => {
               const gh = parseGitHubRepo(urlBar)
-              if (!gh) return null
+              const isLovable = urlBar.includes('lovable.dev')
+              if (!gh && !isLovable) return null
               return (
-                <div
-                  draggable
-                  title={`Drag to a Files node to clone ${gh.owner}/${gh.repo}`}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/canvaflow-repo', JSON.stringify(gh))
-                    e.dataTransfer.effectAllowed = 'copy'
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    padding: '0 6px', height: 18, borderRadius: 3,
-                    background: 'rgba(255,255,255,0.08)',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    color: 'rgba(255,255,255,0.55)',
-                    fontSize: 10, fontWeight: 500,
-                    cursor: 'grab', flexShrink: 0, userSelect: 'none',
-                  }}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.7 }}>
-                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
-                  </svg>
-                  {gh.repo}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {isLovable && (
+                    <button
+                      title="Open Claude agent for this Lovable project"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={async () => {
+                        const sessionDir = await window.lovable.createSessionDir()
+                        useNodeStore.getState().add('claude', node.x + node.width + 16, node.y, {
+                          cwd: sessionDir,
+                          connectedNodeId: node.id,
+                        })
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        padding: '0 6px', height: 18, borderRadius: 3,
+                        background: 'rgba(251,146,60,0.1)',
+                        border: '1px solid rgba(251,146,60,0.25)',
+                        color: 'rgba(251,146,60,0.8)',
+                        fontSize: 10, fontWeight: 500,
+                        cursor: 'pointer', flexShrink: 0, userSelect: 'none',
+                      }}
+                      onMouseEnter={(e) => {
+                        Object.assign((e.currentTarget as HTMLElement).style, {
+                          background: 'rgba(251,146,60,0.18)',
+                          borderColor: 'rgba(251,146,60,0.45)',
+                        })
+                      }}
+                      onMouseLeave={(e) => {
+                        Object.assign((e.currentTarget as HTMLElement).style, {
+                          background: 'rgba(251,146,60,0.1)',
+                          borderColor: 'rgba(251,146,60,0.25)',
+                        })
+                      }}
+                    >
+                      <svg width="8" height="10" viewBox="0 0 10 13" fill="none">
+                        <path d="M5 0.5C5 0.5 2 4 2 6.5C2 8.43 3.57 10 5.5 10C7.43 10 9 8.43 9 6.5C9 5.2 8.3 4.1 7.3 3.5C7.3 3.5 7 5 5.8 5.6C5.8 5.6 6.5 3 5 0.5Z" fill="currentColor"/>
+                      </svg>
+                      Lovable
+                    </button>
+                  )}
+                  {gh && (
+                    <div
+                      draggable
+                      title={`Drag to a Files node to clone ${gh.owner}/${gh.repo}`}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('application/canvaflow-repo', JSON.stringify(gh))
+                        e.dataTransfer.effectAllowed = 'copy'
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        padding: '0 6px', height: 18, borderRadius: 3,
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        color: 'rgba(255,255,255,0.55)',
+                        fontSize: 10, fontWeight: 500,
+                        cursor: 'grab', flexShrink: 0, userSelect: 'none',
+                      }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.7 }}>
+                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                      </svg>
+                      {gh.repo}
+                    </div>
+                  )}
                 </div>
               )
             })()}>

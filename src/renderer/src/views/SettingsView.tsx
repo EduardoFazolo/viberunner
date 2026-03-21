@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
 
 export function SettingsView(): React.ReactElement {
@@ -88,11 +88,86 @@ export function SettingsView(): React.ReactElement {
           </>
         )}
 
+        <McpSection />
+
         <div style={{ marginTop: 32, fontSize: 11, color: 'rgba(255,255,255,0.15)' }}>
           Changes apply to new terminals
         </div>
       </div>
     </div>
+  )
+}
+
+function McpSection(): React.ReactElement {
+  const [installed, setInstalled] = useState<boolean | null>(null)
+  const [installing, setInstalling] = useState(false)
+
+  const check = useCallback(async () => {
+    const result = await window.lovable.checkMcpGlobal()
+    setInstalled(result)
+  }, [])
+
+  useEffect(() => { check() }, [check])
+
+  const install = async () => {
+    setInstalling(true)
+    try {
+      await window.lovable.installMcpGlobal()
+      await check()
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <Section label="MCPs">
+      <div style={{
+        padding: '12px 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ fontSize: 16 }}>🔥</span>
+          <div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
+              Lovable MCP
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
+              Lets Claude send prompts to Lovable
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          {installed === null ? (
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>checking…</span>
+          ) : installed ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: '#4ade80',
+                boxShadow: '0 0 6px #4ade80',
+              }} />
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Installed</span>
+            </div>
+          ) : (
+            <button
+              onClick={install}
+              disabled={installing}
+              style={{
+                height: 28, padding: '0 14px', borderRadius: 6, fontSize: 11,
+                border: '1px solid rgba(251,146,60,0.4)',
+                background: 'rgba(251,146,60,0.1)',
+                color: installing ? 'rgba(255,255,255,0.3)' : '#fb923c',
+                cursor: installing ? 'default' : 'pointer',
+                fontFamily: 'inherit', fontWeight: 500,
+                transition: 'all 0.1s',
+              }}
+            >
+              {installing ? 'Installing…' : 'Install globally'}
+            </button>
+          )}
+        </div>
+      </div>
+    </Section>
   )
 }
 

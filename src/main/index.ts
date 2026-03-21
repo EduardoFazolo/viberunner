@@ -10,6 +10,7 @@ import { setupBrowserViewHandlers, destroyAllBrowserViews } from './browserViewM
 import { registerNotionHandlers } from '../plugins/notion/main/handlers'
 import { registerTrelloHandlers } from '../plugins/trello/main/handlers'
 import { registerGitHandlers } from '../plugins/monaco/main/gitHandlers'
+import { registerLovableHandlers } from '../plugins/lovable/main/handlers'
 
 // Suppress noisy Chromium GPU/Skia internal errors that are benign in webview usage
 app.commandLine.appendSwitch('log-level', '3')
@@ -51,6 +52,7 @@ function createWindow(): void {
     else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
     else if (mod && input.shift && input.key === 'C') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newClaude') }
     else if (mod && input.shift && input.key === 'E') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newEditor') }
+    else if (mod && input.shift && input.key === 'L') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newLovable') }
 
   })
 
@@ -123,6 +125,7 @@ app.whenReady().then(async () => {
   registerNotionHandlers(ipcMain)
   registerTrelloHandlers(ipcMain)
   registerGitHandlers(ipcMain)
+  registerLovableHandlers(ipcMain)
 
   // Init tmux and clean up orphan sessions from deleted nodes
   await tmuxManager.init()
