@@ -6,6 +6,7 @@ import { zoomFitNode, zoomExit } from '../utils/zoomFocus'
 import { GridRenderer } from './GridRenderer'
 import { CanvasOverlay } from './CanvasOverlay'
 import { NodeLayer } from './NodeLayer'
+import { ConnectionLayer } from './ConnectionLayer'
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { createNotionNoteFromDrop, NotionCanvasDropPayload } from '../../../plugins/notion/utils/notionDrag'
 
@@ -146,6 +147,7 @@ export function Canvas(): React.ReactElement {
   return (
     <CanvasContextMenu camera={camera}>
       <div
+        id="canvas-viewport"
         ref={rootRef}
         style={{
           position: 'relative',
@@ -166,6 +168,7 @@ export function Canvas(): React.ReactElement {
       >
         <GridRenderer camera={camera} />
         <CanvasOverlay camera={camera}>
+          <ConnectionLayer />
           <NodeLayer />
         </CanvasOverlay>
 

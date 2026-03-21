@@ -1,0 +1,12 @@
+{
+  "name": "canvaflow-lovable-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that sends prompts to the Lovable webview running inside CanvaFlow",
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.0"
+  }
+}

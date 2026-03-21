@@ -23,7 +23,7 @@ export function useVisibleNodes(nodes: Map<string, NodeData>, camera: Camera): N
     return Array.from(nodes.values()).filter((node) => {
       // Never cull nodes that own live processes or webviews
       if (node.type === 'terminal') return true
-      if (node.type === 'browser') return true
+      if (node.type === 'browser' || node.type === 'browserv2') return true
       if (pluginRegistry.get(node.type)?.keepAlive) return true
 
       return (

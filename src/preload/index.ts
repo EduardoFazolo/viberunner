@@ -151,6 +151,46 @@ contextBridge.exposeInMainWorld('app', {
     ipcRenderer.invoke('app:getCursorPos'),
 })
 
+contextBridge.exposeInMainWorld('browser', {
+  create: (nodeId: string, partition: string, url: string, bounds: { x: number; y: number; width: number; height: number }): Promise<void> =>
+    ipcRenderer.invoke('browser:create', nodeId, partition, url, bounds),
+  destroy: (nodeId: string): Promise<void> =>
+    ipcRenderer.invoke('browser:destroy', nodeId),
+  changeSession: (nodeId: string, partition: string, url: string, bounds: { x: number; y: number; width: number; height: number }): Promise<void> =>
+    ipcRenderer.invoke('browser:change-session', nodeId, partition, url, bounds),
+  setCanvasLeft: (left: number): void =>
+    ipcRenderer.send('browser:set-canvas-left', left),
+  setCanvasActive: (active: boolean): void =>
+    ipcRenderer.send('browser:set-canvas-active', active),
+  updateBounds: (nodeId: string, bounds: { x: number; y: number; width: number; height: number }): void =>
+    ipcRenderer.send('browser:update-bounds', nodeId, bounds),
+  setVisible: (nodeId: string, visible: boolean): void =>
+    ipcRenderer.send('browser:set-visible', nodeId, visible),
+  setZoomFactor: (nodeId: string, factor: number): void =>
+    ipcRenderer.send('browser:set-zoom-factor', nodeId, factor),
+  navigate: (nodeId: string, url: string): void =>
+    ipcRenderer.send('browser:navigate', nodeId, url),
+  back: (nodeId: string): void => ipcRenderer.send('browser:back', nodeId),
+  forward: (nodeId: string): void => ipcRenderer.send('browser:forward', nodeId),
+  reload: (nodeId: string): void => ipcRenderer.send('browser:reload', nodeId),
+  stop: (nodeId: string): void => ipcRenderer.send('browser:stop', nodeId),
+  focus: (nodeId: string): void => ipcRenderer.send('browser:focus', nodeId),
+  capture: (nodeId: string): Promise<string | null> =>
+    ipcRenderer.invoke('browser:capture', nodeId),
+  executeJS: (nodeId: string, js: string): Promise<unknown> =>
+    ipcRenderer.invoke('browser:execute-js', nodeId, js),
+  onEvent: (callback: (nodeId: string, event: string, data: Record<string, unknown>) => void): () => void => {
+    const listener = (_: unknown, nodeId: string, event: string, data: Record<string, unknown>) => callback(nodeId, event, data)
+    ipcRenderer.on('browser:event', listener)
+    return () => ipcRenderer.removeListener('browser:event', listener)
+  },
+  onCanvasEvent: (callback: (nodeId: string, channel: string, data: Record<string, unknown>) => void): () => void => {
+    const listener = (_: unknown, nodeId: string, channel: string, data: Record<string, unknown>) => callback(nodeId, channel, data)
+    ipcRenderer.on('browser:canvas-event', listener)
+    return () => ipcRenderer.removeListener('browser:canvas-event', listener)
+  },
+})
+
 contextBridge.exposeInMainWorld('trello', {
   fetchCard: (apiKey: string, token: string, cardId: string): Promise<TrelloCard> =>
     ipcRenderer.invoke('trello:fetchCard', apiKey, token, cardId),
@@ -158,6 +198,29 @@ contextBridge.exposeInMainWorld('trello', {
     ipcRenderer.invoke('trello:fetchCardWithSession', partition, cardId),
   prepareExport: (apiKey: string, token: string, cardId: string): Promise<{ text: string; markdown: string }> =>
     ipcRenderer.invoke('trello:prepareExport', apiKey, token, cardId),
+})
+
+contextBridge.exposeInMainWorld('lovable', {
+  preloadPath: (): Promise<string> =>
+    ipcRenderer.invoke('lovable:preload-path'),
+
+  reportStatus: (nodeId: string, status: { loggedIn: boolean; url: string }): Promise<void> =>
+    ipcRenderer.invoke('lovable:report-status', nodeId, status),
+
+  createSessionDir: (): Promise<string> =>
+    ipcRenderer.invoke('lovable:create-session-dir'),
+
+  onInjectPrompt: (callback: (nodeId: string | null, prompt: string) => void): () => void => {
+    const listener = (_: unknown, nodeId: string | null, prompt: string) => callback(nodeId, prompt)
+    ipcRenderer.on('lovable:inject-prompt', listener)
+    return () => ipcRenderer.removeListener('lovable:inject-prompt', listener)
+  },
+
+  checkMcpGlobal: (): Promise<boolean> =>
+    ipcRenderer.invoke('lovable:check-mcp-global'),
+
+  installMcpGlobal: (): Promise<void> =>
+    ipcRenderer.invoke('lovable:install-mcp-global'),
 })
 
 contextBridge.exposeInMainWorld('notion', {

@@ -40,6 +40,9 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
           <span style={{ flex: 1 }}>New Browser</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘B</span>
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => add('browserv2', clickWorldPos.current.x - 400, clickWorldPos.current.y - 300)}>
+          New Browser V2
+        </ContextMenuItem>
         <ContextMenuItem onClick={() => add('notion', clickWorldPos.current.x - 450, clickWorldPos.current.y - 350)}>
           New Notion
         </ContextMenuItem>

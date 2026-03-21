@@ -6,9 +6,11 @@ import { initDatabase, getAllNodeIds } from './database'
 import { setupWorkspaceHandlers } from './workspace'
 import { tmuxManager } from './tmux'
 import { setupBrowserSession } from './browserSession'
+import { setupBrowserViewHandlers, destroyAllBrowserViews } from './browserViewManager'
 import { registerNotionHandlers } from '../plugins/notion/main/handlers'
 import { registerTrelloHandlers } from '../plugins/trello/main/handlers'
 import { registerGitHandlers } from '../plugins/monaco/main/gitHandlers'
+import { registerLovableHandlers } from '../plugins/lovable/main/handlers'
 
 // Suppress noisy Chromium GPU/Skia internal errors that are benign in webview usage
 app.commandLine.appendSwitch('log-level', '3')
@@ -50,11 +52,13 @@ function createWindow(): void {
     else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
     else if (mod && input.shift && input.key === 'C') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newClaude') }
     else if (mod && input.shift && input.key === 'E') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newEditor') }
+    else if (mod && input.shift && input.key === 'L') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newLovable') }
 
   })
 
   // Kill all PTYs before the webContents is destroyed so onData never fires into a dead window
   mainWindow.on('close', () => {
+    destroyAllBrowserViews()
     killAllPtys()
   })
 
@@ -117,9 +121,11 @@ app.whenReady().then(async () => {
     console.error('[main] Database init failed, running without persistence:', err)
   }
   setupWorkspaceHandlers()
+  setupBrowserViewHandlers()
   registerNotionHandlers(ipcMain)
   registerTrelloHandlers(ipcMain)
   registerGitHandlers(ipcMain)
+  registerLovableHandlers(ipcMain)
 
   // Init tmux and clean up orphan sessions from deleted nodes
   await tmuxManager.init()
