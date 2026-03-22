@@ -16,6 +16,7 @@ const MODE_LABEL: Record<MaestroMode, string> = {
   pan:       'Pan',
   'zoom-in': 'Zoom in',
   'zoom-out':'Zoom out',
+  pinching:  'Focus…',
 }
 
 const MODE_DOT_COLOR: Record<MaestroMode, string> = {
@@ -23,6 +24,7 @@ const MODE_DOT_COLOR: Record<MaestroMode, string> = {
   pan:       '#fb923c',
   'zoom-in': '#4ade80',
   'zoom-out':'#f87171',
+  pinching:  '#22d3ee',
 }
 
 interface MaestroOverlayProps {
@@ -49,6 +51,7 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
           activeHandIndex={activeHandIndex}
           connections={connections}
           mode={mode}
+          pinch={state.pinch}
         />
       )}
 
