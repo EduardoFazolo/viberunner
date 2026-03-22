@@ -51,6 +51,19 @@ export function SettingsView(): React.ReactElement {
               </SettingRow>
             </Section>
 
+            <Section label="Enhancements">
+              <SettingRow
+                label="Maestro"
+                hint="Control the canvas with your hands via webcam. Open palm to pan, point up to zoom. Clap to switch controlling hand."
+                inline
+              >
+                <Toggle
+                  value={settings.maestroEnabled}
+                  onChange={(v) => update({ maestroEnabled: v })}
+                />
+              </SettingRow>
+            </Section>
+
             <Section label="Terminal">
               <SettingRow
                 label="Shell"
@@ -194,7 +207,22 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function SettingRow({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }): React.ReactElement {
+function SettingRow({ label, hint, children, inline }: { label: string; hint: string; children: React.ReactNode; inline?: boolean }): React.ReactElement {
+  if (inline) {
+    return (
+      <div style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
+        display: 'flex', flexDirection: 'column', gap: 6,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>{label}</span>
+          {children}
+        </div>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', lineHeight: 1.5 }}>{hint}</span>
+      </div>
+    )
+  }
   return (
     <div style={{
       padding: '12px 16px',
@@ -205,6 +233,38 @@ function SettingRow({ label, hint, children }: { label: string; hint: string; ch
       {children}
       <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', lineHeight: 1.5 }}>{hint}</span>
     </div>
+  )
+}
+
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }): React.ReactElement {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      style={{
+        position: 'relative',
+        width: 36,
+        height: 20,
+        borderRadius: 10,
+        border: 'none',
+        background: value ? 'rgba(167,139,250,0.8)' : 'rgba(255,255,255,0.1)',
+        cursor: 'pointer',
+        padding: 0,
+        transition: 'background 0.15s',
+        flexShrink: 0,
+      }}
+    >
+      <span style={{
+        position: 'absolute',
+        top: 2,
+        left: value ? 18 : 2,
+        width: 16,
+        height: 16,
+        borderRadius: '50%',
+        background: '#fff',
+        transition: 'left 0.15s',
+        display: 'block',
+      }} />
+    </button>
   )
 }
 

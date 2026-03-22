@@ -9,6 +9,8 @@ import { NodeLayer } from './NodeLayer'
 import { ConnectionLayer } from './ConnectionLayer'
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { createNotionNoteFromDrop, NotionCanvasDropPayload } from '../../../plugins/notion/utils/notionDrag'
+import { useMaestro } from '../../../plugins/maestro/renderer/useMaestro'
+import { MaestroOverlay } from '../../../plugins/maestro/renderer/MaestroOverlay'
 
 export function Canvas(): React.ReactElement {
   const { camera, pan, zoomAt } = useCameraStore()
@@ -17,6 +19,8 @@ export function Canvas(): React.ReactElement {
   const lastPos = useRef({ x: 0, y: 0 })
   const spaceHeldRef = useRef(false)
   const [spaceHeld, setSpaceHeld] = useState(false)
+
+  const maestroState = useMaestro()
 
   // Double-tap on a node (title bar / terminal content / any host-page area) to zoom-fit;
   // double-tap again to zoom back out.
@@ -173,6 +177,7 @@ export function Canvas(): React.ReactElement {
         </CanvasOverlay>
 
       </div>
+      <MaestroOverlay state={maestroState} />
     </CanvasContextMenu>
   )
 }
