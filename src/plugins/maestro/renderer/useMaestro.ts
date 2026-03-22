@@ -32,17 +32,8 @@ const ZOOM_OUT_DELTA    = 32
  * Consecutive frames the same zoom gesture must be held before zoom starts.
  * At ~60fps this is ~200ms — enough to filter out accidental/transitional poses.
  */
-const ZOOM_STABLE_FRAMES = 12
+const ZOOM_STABLE_FRAMES = 3
 
-/**
- * Minimum absolute value of the wrist→indexMCP→pinkyMCP cross-product before
- * we treat the palm orientation as unambiguous.  Low values mean the hand is
- * nearly edge-on to the camera and flipping between palm/back is noisy.
- *
- * Typical cross-product magnitude for a clearly palm-facing hand in normalized
- * [0,1] image coords is ~0.03–0.04, so this threshold must stay well below that.
- */
-const PALM_ORIENT_MIN_CROSS = 0.012
 
 /** Thumb-tip (lm4) to index-tip (lm8) distance threshold for pinch. */
 const PINCH_THRESHOLD        = 0.06
@@ -78,8 +69,6 @@ export interface DetectedHand {
   handedness: 'Left' | 'Right'
   gesture: string
   score: number
-  /** true = palm toward camera, false = back toward camera, null = ambiguous/edge-on */
-  palmFacing: boolean | null
   index: number
 }
 
@@ -126,35 +115,59 @@ function distXY(a: { x: number; y: number }, b: { x: number; y: number }): numbe
 }
 
 /**
- * True when fingers are reasonably spread (avg fingertip–wrist dist > threshold).
- * Used to distinguish an open back-of-hand from a fist when gesture = "None".
+ * Palm size in normalized image coordinates = dist(wrist, middle-finger MCP).
+ * Used to normalize all finger-extension thresholds so they are distance-independent
+ * (the hand appearing small in the frame doesn't break the detection).
  */
-function fingersSpread(lms: HandLandmark[]): boolean {
-  const w = lms[0]; let total = 0
-  for (const tip of [4, 8, 12, 16, 20]) {
-    const dx = lms[tip].x - w.x, dy = lms[tip].y - w.y
-    total += Math.sqrt(dx * dx + dy * dy)
-  }
-  return total / 5 > 0.13
+function palmSize(lms: HandLandmark[]): number {
+  return dist2D(lms[0], lms[9])
 }
 
 /**
- * Detects palm-vs-back orientation via signed cross-product of the
- * wrist → indexMCP → pinkyMCP triangle (accounts for MediaPipe's
- * image-space handedness convention with a mirrored webcam feed).
+ * "L" gesture — index finger up + thumb extended sideways, other three fingers curled.
+ * Resembles the letter L and signals "expand / zoom in".
  *
- * Returns null when the magnitude is too small (hand nearly edge-on)
- * so callers can treat ambiguous orientations as non-actionable.
+ * All thresholds are relative to palmSize() so they work at any camera distance.
  */
-function detectPalmFacing(lms: HandLandmark[], handedness: 'Left' | 'Right'): boolean | null {
-  const w = lms[0], i = lms[5], p = lms[17]
-  const v1x = i.x - w.x, v1y = i.y - w.y
-  const v2x = p.x - w.x, v2y = p.y - w.y
-  const crossZ = v1x * v2y - v1y * v2x
+function isLGesture(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false   // hand not visible / too small
 
-  if (Math.abs(crossZ) < PALM_ORIENT_MIN_CROSS) return null  // too ambiguous
+  // Index must be extended: tip clearly above its MCP
+  const indexExtended = dist2D(lms[8], lms[5]) > ps * 0.65
 
-  return handedness === 'Left' ? crossZ > 0 : crossZ < 0
+  // Thumb must be extended outward: tip far from index MCP
+  const thumbExtended = dist2D(lms[4], lms[5]) > ps * 0.70
+
+  // Middle, ring, pinky must be curled: tip close to their own MCP
+  const middleCurled = dist2D(lms[12], lms[9])  < ps * 0.55
+  const ringCurled   = dist2D(lms[16], lms[13]) < ps * 0.55
+  const pinkyCurled  = dist2D(lms[20], lms[17]) < ps * 0.55
+
+  return indexExtended && thumbExtended && middleCurled && ringCurled && pinkyCurled
+}
+
+/**
+ * "Bunch / gather" gesture — all 5 fingertips clustered close together,
+ * like pinching a small marble. Signals "compress / zoom out".
+ *
+ * Checks that every fingertip is within a palm-relative radius of the centroid.
+ */
+function isBunchGesture(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+
+  const tips = [4, 8, 12, 16, 20]
+  let cx = 0, cy = 0
+  for (const t of tips) { cx += lms[t].x; cy += lms[t].y }
+  cx /= 5; cy /= 5
+
+  const maxAllowed = ps * 0.45
+  for (const t of tips) {
+    const dx = lms[t].x - cx, dy = lms[t].y - cy
+    if (Math.sqrt(dx * dx + dy * dy) > maxAllowed) return false
+  }
+  return true
 }
 
 /**
@@ -241,8 +254,8 @@ export function useMaestro(): MaestroState {
    * Tracks how many consecutive frames the current zoom intent has been held.
    * Resets to 0 whenever the gesture or orientation changes.
    */
-  const zoomStableRef = useRef<{ gesture: string; palmFacing: boolean | null; frames: number }>({
-    gesture: '', palmFacing: null, frames: 0,
+  const zoomStableRef = useRef<{ zoomIn: boolean; frames: number; active: boolean }>({
+    zoomIn: false, frames: 0, active: false,
   })
 
   // ── Teardown ─────────────────────────────────────────────────────────────
@@ -334,8 +347,7 @@ export function useMaestro(): MaestroState {
       const score      = result.gestures[i]?.[0]?.score ?? 0
       if (!handedness) continue
       const lm = result.landmarks[i] as HandLandmark[]
-      detectedHands.push({ landmarks: lm, handedness, gesture, score,
-        palmFacing: detectPalmFacing(lm, handedness), index: i })
+      detectedHands.push({ landmarks: lm, handedness, gesture, score, index: i })
     }
 
     // ── Clap detection ───────────────────────────────────────────────────────
@@ -393,7 +405,7 @@ export function useMaestro(): MaestroState {
 
     if (isPinching) {
       prevPalmRef.current = null
-      zoomStableRef.current = { gesture: '', palmFacing: null, frames: 0 }
+      zoomStableRef.current = { zoomIn: false, frames: 0, active: false }
 
       if (phase === 'idle') {
         // First pinch → primed
@@ -478,75 +490,54 @@ export function useMaestro(): MaestroState {
   }
 
   function applyGesture(hand: DetectedHand, vw: number, vh: number): MaestroMode {
-    switch (hand.gesture) {
-      case 'Closed_Fist': {
-        // Pan doesn't need stability — immediate feel is important for dragging.
-        zoomStableRef.current = { gesture: '', palmFacing: null, frames: 0 }
-        const center = palmCenter(hand.landmarks)
-        const mx = 1 - center.x, my = center.y
-        if (prevPalmRef.current) {
-          const dx = (mx - prevPalmRef.current.x) * vw * PAN_SENSITIVITY
-          const dy = (my - prevPalmRef.current.y) * vh * PAN_SENSITIVITY
-          if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) pan(dx, dy)
-        }
-        prevPalmRef.current = { x: mx, y: my }
-        return 'pan'
-      }
+    const lms = hand.landmarks
 
-      case 'Open_Palm': {
-        prevPalmRef.current = null
-        // Ambiguous orientation → don't zoom
-        if (hand.palmFacing === null) {
-          zoomStableRef.current = { gesture: '', palmFacing: null, frames: 0 }
-          return 'idle'
-        }
-        return applyZoom(hand, hand.palmFacing, vw, vh)
+    // ── Pan: Closed_Fist ─────────────────────────────────────────────────────
+    if (hand.gesture === 'Closed_Fist') {
+      zoomStableRef.current = { zoomIn: false, frames: 0, active: false }
+      const center = palmCenter(lms)
+      const mx = 1 - center.x, my = center.y
+      if (prevPalmRef.current) {
+        const dx = (mx - prevPalmRef.current.x) * vw * PAN_SENSITIVITY
+        const dy = (my - prevPalmRef.current.y) * vh * PAN_SENSITIVITY
+        if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) pan(dx, dy)
       }
-
-      case 'None': {
-        prevPalmRef.current = null
-        // Angled back-of-hand zoom-out pose often classified "None"
-        if (hand.palmFacing === false && fingersSpread(hand.landmarks)) {
-          return applyZoom(hand, false, vw, vh)
-        }
-        zoomStableRef.current = { gesture: '', palmFacing: null, frames: 0 }
-        return 'idle'
-      }
-
-      default:
-        prevPalmRef.current = null
-        zoomStableRef.current = { gesture: '', palmFacing: null, frames: 0 }
-        return 'idle'
+      prevPalmRef.current = { x: mx, y: my }
+      return 'pan'
     }
+
+    prevPalmRef.current = null
+
+    // ── Zoom in: L gesture (index up + thumb out, others curled) ────────────
+    if (isLGesture(lms)) return applyZoom(true, lms, vw, vh)
+
+    // ── Zoom out: Bunch gesture (all fingertips gathered) ───────────────────
+    if (isBunchGesture(lms)) return applyZoom(false, lms, vw, vh)
+
+    // ── Idle ─────────────────────────────────────────────────────────────────
+    zoomStableRef.current = { zoomIn: false, frames: 0, active: false }
+    return 'idle'
   }
 
   /**
-   * Shared zoom logic with stability gating.
-   * Zoom only fires after ZOOM_STABLE_FRAMES consecutive frames of the same
-   * gesture + orientation, preventing accidental triggers during transitions.
+   * Stability-gated zoom.  The same zoom direction must be confirmed for
+   * ZOOM_STABLE_FRAMES consecutive frames before the canvas starts moving.
    */
-  function applyZoom(hand: DetectedHand, palmFacing: boolean, vw: number, vh: number): MaestroMode {
+  function applyZoom(zoomIn: boolean, lms: HandLandmark[], vw: number, vh: number): MaestroMode {
+    const mode: MaestroMode = zoomIn ? 'zoom-in' : 'zoom-out'
     const stable = zoomStableRef.current
-    const mode: MaestroMode = palmFacing ? 'zoom-in' : 'zoom-out'
 
-    // Key stability on orientation only — gesture name can flicker between
-    // Open_Palm and None for the same pose, which would reset the counter.
-    if (stable.palmFacing === palmFacing) {
+    if (stable.active && stable.zoomIn === zoomIn) {
       stable.frames++
     } else {
-      zoomStableRef.current = { gesture: hand.gesture, palmFacing, frames: 1 }
-      // Show the mode label immediately so the user gets visual feedback,
-      // but don't move the canvas yet.
-      return mode
+      zoomStableRef.current = { zoomIn, frames: 1, active: true }
+      return mode   // show label but don't move yet
     }
 
-    if (stable.frames < ZOOM_STABLE_FRAMES) {
-      return mode
-    }
+    if (stable.frames < ZOOM_STABLE_FRAMES) return mode
 
-    // Stable — apply zoom
-    const center = palmCenter(hand.landmarks)
-    zoomAt((1 - center.x) * vw, center.y * vh, palmFacing ? ZOOM_IN_DELTA : ZOOM_OUT_DELTA)
+    const center = palmCenter(lms)
+    zoomAt((1 - center.x) * vw, center.y * vh, zoomIn ? ZOOM_IN_DELTA : ZOOM_OUT_DELTA)
     return mode
   }
 
