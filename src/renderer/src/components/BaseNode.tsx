@@ -98,15 +98,19 @@ interface Props {
 }
 
 export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom }: Props): React.ReactElement {
-  const { update, bringToFront, remove, focusedNodeId, setFocusedNodeId } = useNodeStore()
+  const { update, bringToFront, remove, focusedNodeId, setFocusedNodeId, selectedNodeIds } = useNodeStore()
   const { setDraggingOverSidebar, add: addTemplate } = useTemplateStore()
   const focused = focusedNodeId === node.id
+  const selected = selectedNodeIds.has(node.id)
 
   const isDragging = useRef(false)
   const dragStart = useRef({ px: 0, py: 0, nx: 0, ny: 0 })
+  const multiDragStarts = useRef<Map<string, { nx: number; ny: number }>>(new Map())
 
   const isResizing = useRef(false)
   const resizeStart = useRef({ px: 0, py: 0, nw: 0, nh: 0 })
+
+  const SNAP_GRID = 10
 
   const onHeaderPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
@@ -116,6 +120,19 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
     useActivationStore.getState().activate(node.id)
     isDragging.current = true
     dragStart.current = { px: e.clientX, py: e.clientY, nx: node.x, ny: node.y }
+    // Record starting positions of all other selected nodes for multi-drag
+    const { selectedNodeIds, nodes } = useNodeStore.getState()
+    if (selectedNodeIds.has(node.id)) {
+      const starts = new Map<string, { nx: number; ny: number }>()
+      for (const id of selectedNodeIds) {
+        if (id === node.id) continue
+        const n = nodes.get(id)
+        if (n) starts.set(id, { nx: n.x, ny: n.y })
+      }
+      multiDragStarts.current = starts
+    } else {
+      multiDragStarts.current = new Map()
+    }
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   }, [node.id, node.x, node.y, bringToFront, setFocusedNodeId])
 
@@ -124,10 +141,24 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
     const zoom = useCameraStore.getState().camera.zoom
     const dx = (e.clientX - dragStart.current.px) / zoom
     const dy = (e.clientY - dragStart.current.py) / zoom
-    update(node.id, {
-      x: dragStart.current.nx + dx,
-      y: dragStart.current.ny + dy,
-    })
+    const snap = (v: number) => Math.round(v / SNAP_GRID) * SNAP_GRID
+    let newX = dragStart.current.nx + dx
+    let newY = dragStart.current.ny + dy
+    if (e.ctrlKey) {
+      newX = snap(newX)
+      newY = snap(newY)
+    }
+    update(node.id, { x: newX, y: newY })
+    // Move all other selected nodes by the same delta
+    if (multiDragStarts.current.size > 0) {
+      const storeUpdate = useNodeStore.getState().update
+      for (const [id, start] of multiDragStarts.current) {
+        let nx = start.nx + dx
+        let ny = start.ny + dy
+        if (e.ctrlKey) { nx = snap(nx); ny = snap(ny) }
+        storeUpdate(id, { x: nx, y: ny })
+      }
+    }
     setDraggingOverSidebar(e.clientX < SIDEBAR_W)
   }, [node.id, update, setDraggingOverSidebar])
 
@@ -177,6 +208,8 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
         borderRadius: 8,
         boxShadow: focused
           ? '0 8px 32px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.4), 0 0 0 1.5px rgba(167,139,250,0.5)'
+          : selected
+          ? '0 8px 32px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35), 0 0 0 1.5px rgba(96,165,250,0.55)'
           : '0 8px 32px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35)',
         overflow: 'hidden',
         transition: 'box-shadow 0.15s',

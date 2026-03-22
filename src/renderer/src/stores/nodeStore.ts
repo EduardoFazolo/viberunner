@@ -36,6 +36,11 @@ interface NodeStore {
   bringToFront: (id: string) => void
   sendToBack: (id: string) => void
   getMaxZIndex: () => number
+
+  // Multi-select
+  selectedNodeIds: Set<string>
+  setSelectedNodeIds: (ids: Set<string>) => void
+  clearSelection: () => void
 }
 
 const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
@@ -74,6 +79,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
   workspaceNodes: new Map(),
   activeWorkspaceId: '',
   focusedNodeId: null,
+  selectedNodeIds: new Set(),
 
   loadWorkspace: (wsId, nodes) => set((s) => {
     const workspaceNodes = new Map(s.workspaceNodes)
@@ -82,6 +88,8 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
   }),
 
   setFocusedNodeId: (id) => set({ focusedNodeId: id }),
+  setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids }),
+  clearSelection: () => set({ selectedNodeIds: new Set() }),
 
   add: (type, x, y, props = {}) => {
     const id = nanoid()

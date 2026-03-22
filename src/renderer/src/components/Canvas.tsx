@@ -20,6 +20,10 @@ export function Canvas(): React.ReactElement {
   const spaceHeldRef = useRef(false)
   const interactionEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [spaceHeld, setSpaceHeld] = useState(false)
+  const [shiftHeld, setShiftHeld] = useState(false)
+  const isSelectingRef = useRef(false)
+  const selectionStart = useRef({ sx: 0, sy: 0 })
+  const [selectionRect, setSelectionRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
   const startCanvasInteraction = useCallback(() => {
     notifyCanvasInteractionStart()
@@ -119,21 +123,75 @@ export function Canvas(): React.ReactElement {
     // Clicking the canvas background deactivates any focused node.
     // Nodes call stopPropagation on pointerDown, so this only fires on empty space.
     useNodeStore.getState().setFocusedNodeId(null)
-    if (e.button === 1 || e.button === 0) {
-      startPan(e)
+    if (e.shiftKey && e.button === 0) {
+      // Enter rubber-band selection mode
+      const rect = rootRef.current!.getBoundingClientRect()
+      const sx = e.clientX - rect.left
+      const sy = e.clientY - rect.top
+      isSelectingRef.current = true
+      selectionStart.current = { sx, sy }
+      setSelectionRect({ x: sx, y: sy, w: 0, h: 0 })
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      e.preventDefault()
+    } else {
+      useNodeStore.getState().clearSelection()
+      if (e.button === 1 || e.button === 0) {
+        startPan(e)
+      }
     }
   }, [startPan])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const rect = rootRef.current?.getBoundingClientRect()
     if (rect) updateCursorPos(e.clientX - rect.left, e.clientY - rect.top)
+
+    if (isSelectingRef.current && rect) {
+      const sx = e.clientX - rect.left
+      const sy = e.clientY - rect.top
+      setSelectionRect({
+        x: Math.min(sx, selectionStart.current.sx),
+        y: Math.min(sy, selectionStart.current.sy),
+        w: Math.abs(sx - selectionStart.current.sx),
+        h: Math.abs(sy - selectionStart.current.sy),
+      })
+      return
+    }
+
     if (!isPanningRef.current) return
     pan(e.clientX - lastPos.current.x, e.clientY - lastPos.current.y)
     lastPos.current = { x: e.clientX, y: e.clientY }
     scheduleCanvasInteractionEnd()
   }, [pan, scheduleCanvasInteractionEnd])
 
-  const onPointerUp = useCallback(() => {
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    if (isSelectingRef.current) {
+      isSelectingRef.current = false
+      const canvasRect = rootRef.current?.getBoundingClientRect()
+      if (canvasRect) {
+        const sx = e.clientX - canvasRect.left
+        const sy = e.clientY - canvasRect.top
+        const x = Math.min(sx, selectionStart.current.sx)
+        const y = Math.min(sy, selectionStart.current.sy)
+        const w = Math.abs(sx - selectionStart.current.sx)
+        const h = Math.abs(sy - selectionStart.current.sy)
+        const { camera } = useCameraStore.getState()
+        // Convert screen rect to world coords
+        const wx1 = (x - camera.x) / camera.zoom
+        const wy1 = (y - camera.y) / camera.zoom
+        const wx2 = (x + w - camera.x) / camera.zoom
+        const wy2 = (y + h - camera.y) / camera.zoom
+        const nodes = useNodeStore.getState().nodes
+        const selectedIds = new Set<string>()
+        for (const node of nodes.values()) {
+          if (node.x < wx2 && node.x + node.width > wx1 && node.y < wy2 && node.y + node.height > wy1) {
+            selectedIds.add(node.id)
+          }
+        }
+        useNodeStore.getState().setSelectedNodeIds(selectedIds)
+      }
+      setSelectionRect(null)
+      return
+    }
     isPanningRef.current = false
     scheduleCanvasInteractionEnd(120)
   }, [scheduleCanvasInteractionEnd])
@@ -146,10 +204,21 @@ export function Canvas(): React.ReactElement {
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.code === 'Space') { spaceHeldRef.current = true; setSpaceHeld(true) }
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') setShiftHeld(true)
   }, [])
 
   const onKeyUp = useCallback((e: React.KeyboardEvent) => {
     if (e.code === 'Space') { spaceHeldRef.current = false; setSpaceHeld(false) }
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') setShiftHeld(false)
+  }, [])
+
+  // Also track shift globally so cursor updates even when canvas div isn't focused
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(true) }
+    const up = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(false) }
+    document.addEventListener('keydown', down)
+    document.addEventListener('keyup', up)
+    return () => { document.removeEventListener('keydown', down); document.removeEventListener('keyup', up) }
   }, [])
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -181,7 +250,7 @@ export function Canvas(): React.ReactElement {
           width: '100vw',
           height: '100vh',
           overflow: 'hidden',
-          cursor: spaceHeld ? 'grab' : 'default',
+          cursor: shiftHeld ? 'crosshair' : spaceHeld ? 'grab' : 'default',
           outline: 'none',
         }}
         tabIndex={0}
@@ -199,6 +268,22 @@ export function Canvas(): React.ReactElement {
           <NodeLayer />
         </CanvasOverlay>
 
+        {selectionRect && (
+          <div
+            style={{
+              position: 'absolute',
+              left: selectionRect.x,
+              top: selectionRect.y,
+              width: selectionRect.w,
+              height: selectionRect.h,
+              background: 'rgba(96,165,250,0.07)',
+              border: '1px solid rgba(96,165,250,0.45)',
+              borderRadius: 3,
+              pointerEvents: 'none',
+              zIndex: 9999,
+            }}
+          />
+        )}
       </div>
       {plugins.map((p) => p.CanvasMount ? <p.CanvasMount key={p.id} /> : null)}
     </CanvasContextMenu>
