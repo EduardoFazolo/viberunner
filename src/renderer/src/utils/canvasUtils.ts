@@ -1,5 +1,6 @@
 import { useCameraStore } from '../stores/cameraStore'
 import type { Camera } from '../stores/cameraStore'
+import { useCanvasViewportStore } from '../stores/canvasViewportStore'
 
 export interface NodeRect {
   x: number
@@ -11,16 +12,12 @@ export interface NodeRect {
 const FIT_PADDING = 20
 const FIT_MAX_ZOOM = 2.0
 
-/** Returns the canvas element's actual dimensions, falling back to viewport size. */
+/** Returns the canvas content area dimensions, excluding sidebar and title/tab bars. */
 export function getCanvasRect(): { width: number; height: number } {
-  const el = document.querySelector('[data-canvas-root]') as HTMLElement | null
-  if (el) {
-    const r = el.getBoundingClientRect()
-    return { width: r.width, height: r.height }
-  }
+  const { left, top } = useCanvasViewportStore.getState()
   return {
-    width: document.documentElement.clientWidth,
-    height: document.documentElement.clientHeight,
+    width: document.documentElement.clientWidth - left,
+    height: document.documentElement.clientHeight - top,
   }
 }
 

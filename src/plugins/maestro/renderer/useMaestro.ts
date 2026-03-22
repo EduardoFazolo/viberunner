@@ -395,7 +395,7 @@ export function useMaestro(): MaestroState {
     // ── No hands ─────────────────────────────────────────────────────────────
     if (detectedHands.length === 0) {
       prevPalmRef.current = null
-      pinchStartRef.current = null; pinchNodeRef.current = null
+      pinchPhaseRef.current = 'idle'; pinchNodeRef.current = null
       setHands([]); setActiveHandIndex(null); setMode('idle'); setPinch(null)
       return
     }
