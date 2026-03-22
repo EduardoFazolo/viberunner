@@ -36,7 +36,6 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show()
-    if (is.dev) mainWindow!.webContents.openDevTools({ mode: 'right' })
   })
 
   // Prevent macOS Smart Zoom (two-finger double-tap) and pinch gestures from
