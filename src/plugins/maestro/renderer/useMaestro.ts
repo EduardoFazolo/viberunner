@@ -148,6 +148,28 @@ function isLGesture(lms: HandLandmark[]): boolean {
 }
 
 /**
+ * "Closed pinch" gesture — thumb tip and index tip touching while the
+ * remaining three fingers are curled (not extended).
+ *
+ * This is the palm-relative complement to detectPinchPoint (which requires
+ * the other fingers to be extended).  Both map to zoom-out.
+ */
+function isClosedPinchGesture(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+
+  // Thumb and index must be touching (palm-size normalised)
+  if (dist2D(lms[4], lms[8]) >= ps * 0.55) return false
+
+  // At least 2 of the 3 remaining fingers must be curled
+  const middleCurled = dist2D(lms[12], lms[9])  < ps * 0.65
+  const ringCurled   = dist2D(lms[16], lms[13]) < ps * 0.65
+  const pinkyCurled  = dist2D(lms[20], lms[17]) < ps * 0.65
+  const curledCount  = [middleCurled, ringCurled, pinkyCurled].filter(Boolean).length
+  return curledCount >= 2
+}
+
+/**
  * "Bunch / gather" gesture — all 5 fingertips clustered close together,
  * like pinching a small marble. Signals "compress / zoom out".
  *
@@ -513,6 +535,9 @@ export function useMaestro(): MaestroState {
 
     // ── Zoom out: Bunch gesture (all fingertips gathered) ───────────────────
     if (isBunchGesture(lms)) return applyZoom(false, lms, vw, vh)
+
+    // ── Zoom out: Closed pinch (thumb+index touching, others curled) ─────────
+    if (isClosedPinchGesture(lms)) return applyZoom(false, lms, vw, vh)
 
     // ── Idle ─────────────────────────────────────────────────────────────────
     zoomStableRef.current = { zoomIn: false, frames: 0, active: false }
