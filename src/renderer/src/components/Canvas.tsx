@@ -9,6 +9,7 @@ import { NodeLayer } from './NodeLayer'
 import { ConnectionLayer } from './ConnectionLayer'
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { createNotionNoteFromDrop, NotionCanvasDropPayload } from '../../../plugins/notion/utils/notionDrag'
+import { plugins } from '../../../plugins'
 
 export function Canvas(): React.ReactElement {
   const { camera, pan, zoomAt } = useCameraStore()
@@ -173,6 +174,7 @@ export function Canvas(): React.ReactElement {
         </CanvasOverlay>
 
       </div>
+      {plugins.map((p) => p.CanvasMount ? <p.CanvasMount key={p.id} /> : null)}
     </CanvasContextMenu>
   )
 }
