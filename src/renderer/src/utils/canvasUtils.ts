@@ -1,4 +1,4 @@
-import { useCameraStore } from '../stores/cameraStore'
+import { useCameraStore, MIN_ZOOM } from '../stores/cameraStore'
 import type { Camera } from '../stores/cameraStore'
 import { useCanvasViewportStore } from '../stores/canvasViewportStore'
 
@@ -16,8 +16,8 @@ const FIT_MAX_ZOOM = 2.0
 export function getCanvasRect(): { width: number; height: number } {
   const { left, top } = useCanvasViewportStore.getState()
   return {
-    width: document.documentElement.clientWidth - left,
-    height: document.documentElement.clientHeight - top,
+    width: Math.max(1, document.documentElement.clientWidth - left),
+    height: Math.max(1, document.documentElement.clientHeight - top),
   }
 }
 
@@ -38,7 +38,7 @@ export function computeFitCamera(
   const maxY = Math.max(...all.map(n => n.y + n.height))
   const contentW = maxX - minX + FIT_PADDING * 2
   const contentH = maxY - minY + FIT_PADDING * 2
-  const zoom = Math.min(viewportWidth / contentW, viewportHeight / contentH, FIT_MAX_ZOOM)
+  const zoom = Math.max(MIN_ZOOM, Math.min(viewportWidth / contentW, viewportHeight / contentH, FIT_MAX_ZOOM))
   return {
     zoom,
     x: (viewportWidth - (maxX + minX) * zoom) / 2,

@@ -70,6 +70,7 @@ function drawGrid(g: Graphics, width: number, height: number, camera: Camera) {
 
   const baseSize = 40
   const zoom = camera.zoom
+  if (!zoom || !isFinite(zoom)) return
 
   let step = baseSize
   while (step * zoom < 20) step *= 4

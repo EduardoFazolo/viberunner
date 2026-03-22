@@ -14,7 +14,7 @@ interface CameraStore {
   zoomByFactor: (factor: number) => void
 }
 
-const MIN_ZOOM = 0.05
+export const MIN_ZOOM = 0.05
 const MAX_ZOOM = 5
 const ZOOM_SPEED = 0.001
 
@@ -32,19 +32,24 @@ export const useCameraStore = create<CameraStore>((set, get) => ({
     camera: { ...s.camera, x: s.camera.x + dx, y: s.camera.y + dy }
   })),
 
-  zoomAt: (screenX, screenY, delta) => set((s) => {
-    const { camera } = s
-    const factor = 1 - delta * ZOOM_SPEED
-    const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * factor))
-    const zoomRatio = newZoom / camera.zoom
-    return {
-      camera: {
-        zoom: newZoom,
-        x: screenX - zoomRatio * (screenX - camera.x),
-        y: screenY - zoomRatio * (screenY - camera.y),
+  zoomAt: (screenX, screenY, delta) => {
+    if (!isFinite(screenX) || !isFinite(screenY) || !isFinite(delta)) return
+    set((s) => {
+      const { camera } = s
+      const clampedX = Math.max(0, screenX)
+      const clampedY = Math.max(0, screenY)
+      const factor = 1 - delta * ZOOM_SPEED
+      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * factor))
+      const zoomRatio = newZoom / camera.zoom
+      return {
+        camera: {
+          zoom: newZoom,
+          x: clampedX - zoomRatio * (clampedX - camera.x),
+          y: clampedY - zoomRatio * (clampedY - camera.y),
+        }
       }
-    }
-  }),
+    })
+  },
 
   zoomByFactor: (factor) => set((s) => {
     const { camera } = s

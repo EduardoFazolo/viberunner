@@ -345,6 +345,7 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
       const right = sx + sw
       const bottom = sy + sh
       if (right <= left || bottom <= top) return null
+      if (right - left < 0.5 || bottom - top < 0.5) return null
       return {
         x: Math.round(left),
         y: Math.round(top),
@@ -439,7 +440,8 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    const bounds = getBounds() ?? { x: 0, y: 0, width: Math.round(node.width), height: Math.round(node.height - TITLE_H - TOOLBAR_H) }
+    const { left: vpLeft, top: vpTop } = useCanvasViewportStore.getState()
+    const bounds = getBounds() ?? { x: vpLeft, y: vpTop, width: Math.round(node.width), height: Math.round(node.height - TITLE_H - TOOLBAR_H) }
     window.browser.create(node.id, partition, webviewSrcRef.current, bounds).then(() => {
       setViewCreated(true)
     })
@@ -457,7 +459,8 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
     if (!viewCreated) return
     if (partition === partitionRef.current) return
     partitionRef.current = partition
-    const bounds = getBounds() ?? { x: 0, y: 0, width: Math.round(node.width), height: Math.round(node.height - TITLE_H - TOOLBAR_H) }
+    const { left: vpLeft, top: vpTop } = useCanvasViewportStore.getState()
+    const bounds = getBounds() ?? { x: vpLeft, y: vpTop, width: Math.round(node.width), height: Math.round(node.height - TITLE_H - TOOLBAR_H) }
     window.browser.changeSession(node.id, partition, webviewSrcRef.current, bounds)
   }, [partition, viewCreated, node.id, node.width, node.height, getBounds])
 
@@ -659,8 +662,9 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
         if (!wvRect) return
         const scaleX = viewportWidth ? wvRect.width / viewportWidth : 1
         const scaleY = viewportHeight ? wvRect.height / viewportHeight : 1
-        const hostX = wvRect.left + clientX * scaleX
-        const hostY = wvRect.top + clientY * scaleY
+        const { left: vpLeft, top: vpTop } = useCanvasViewportStore.getState()
+        const hostX = wvRect.left + clientX * scaleX - vpLeft
+        const hostY = wvRect.top + clientY * scaleY - vpTop
         useCameraStore.getState().zoomAt(hostX, hostY, deltaY)
       }
     })

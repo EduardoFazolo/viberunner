@@ -17,6 +17,38 @@ pluginRegistry.register(monacoPlugin)
 pluginRegistry.register(trelloPlugin)
 pluginRegistry.register(lovablePlugin)
 
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ErrorBoundary] React crash:', error, info.componentStack)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, color: '#ff6b6b', fontFamily: 'monospace', background: '#1a1a1a', height: '100vh' }}>
+          <h2>React crash — check DevTools console for stack trace</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{String(this.state.error)}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: '8px 16px', cursor: 'pointer' }}>
+            Retry
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <App />
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
 )

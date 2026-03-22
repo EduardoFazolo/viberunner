@@ -36,6 +36,7 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show()
+    if (is.dev) mainWindow!.webContents.openDevTools({ mode: 'right' })
   })
 
   // Prevent macOS Smart Zoom (two-finger double-tap) and pinch gestures from
@@ -64,6 +65,7 @@ function createWindow(): void {
     else if (mod && input.shift && input.key === 'C') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newClaude') }
     else if (mod && input.shift && input.key === 'E') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newEditor') }
     else if (mod && input.shift && input.key === 'L') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newLovable') }
+    else if (mod && input.alt && input.key === 'i') { event.preventDefault(); mainWindow!.webContents.toggleDevTools() }
 
   })
 
