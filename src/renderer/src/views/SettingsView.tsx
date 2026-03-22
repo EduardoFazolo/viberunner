@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
+import { plugins } from '../../../plugins'
 
 export function SettingsView(): React.ReactElement {
   const { settings, loaded, load, update } = useSettingsStore()
@@ -52,16 +53,7 @@ export function SettingsView(): React.ReactElement {
             </Section>
 
             <Section label="Enhancements">
-              <SettingRow
-                label="Maestro"
-                hint="Control the canvas with your hands via webcam. Open palm to pan, point up to zoom. Clap to switch controlling hand."
-                inline
-              >
-                <Toggle
-                  value={settings.maestroEnabled}
-                  onChange={(v) => update({ maestroEnabled: v })}
-                />
-              </SettingRow>
+              {plugins.map((p) => p.SettingsSection ? <p.SettingsSection key={p.id} /> : null)}
             </Section>
 
             <Section label="Terminal">

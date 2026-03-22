@@ -12,8 +12,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { GestureRecognizer, GestureRecognizerResult } from '@mediapipe/tasks-vision'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
-import { useSettingsStore } from '../../../renderer/src/stores/settingsStore'
 import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
+import { useMaestroStore } from '../maestroStore'
 import { zoomFitNode } from '../../../renderer/src/utils/zoomFocus'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ function hitTestNode(windowX: number, windowY: number): string | null {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useMaestro(): MaestroState {
-  const maestroEnabled = useSettingsStore((s) => s.settings.maestroEnabled)
+  const maestroEnabled = useMaestroStore((s) => s.settings.enabled)
   const { pan, zoomAt } = useCameraStore()
 
   const [status,          setStatus]          = useState<MaestroStatus>('off')
