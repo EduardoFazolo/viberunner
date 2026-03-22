@@ -110,7 +110,7 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
   const isResizing = useRef(false)
   const resizeStart = useRef({ px: 0, py: 0, nw: 0, nh: 0 })
 
-  const SNAP_GRID = 10
+  const SNAP_GRID = 20
 
   const onHeaderPointerDown = useCallback((e: React.PointerEvent) => {
     if (e.button !== 0) return
