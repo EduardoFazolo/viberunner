@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid'
 
 export type NodeType = 'terminal' | 'browser' | 'browserv2' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco'
 
+export type AgentStatus = 'idle' | 'executing' | 'modifying_files' | 'done' | 'error'
+
 export interface NodeData {
   id: string
   type: NodeType
@@ -15,6 +17,12 @@ export interface NodeData {
   minimized: boolean
   contentScale: number
   props: Record<string, unknown>
+  // Metadata — persisted in node_metadata table (separate from spatial writes)
+  lastFocusedAt?: number
+  focusCount?: number
+  tags?: string[]
+  // Agent status — ephemeral, reset on restart
+  agentStatus?: AgentStatus
 }
 
 interface NodeStore {
@@ -41,6 +49,10 @@ interface NodeStore {
   selectedNodeIds: Set<string>
   setSelectedNodeIds: (ids: Set<string>) => void
   clearSelection: () => void
+
+  // Agent status & metadata
+  setAgentStatus: (id: string, status: AgentStatus, message?: string) => void
+  trackFocus: (id: string) => void
 }
 
 const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
@@ -90,6 +102,44 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
   setFocusedNodeId: (id) => set({ focusedNodeId: id }),
   setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids }),
   clearSelection: () => set({ selectedNodeIds: new Set() }),
+
+  setAgentStatus: (id, status) => {
+    set((s) => {
+      const node = s.nodes.get(id)
+      if (!node) return s
+      const nodes = new Map(s.nodes)
+      nodes.set(id, { ...node, agentStatus: status })
+      return syncBack(nodes, s)
+    })
+    // Auto-clear 'done' after 6 seconds
+    if (status === 'done') {
+      setTimeout(() => {
+        set((s) => {
+          const node = s.nodes.get(id)
+          if (!node || node.agentStatus !== 'done') return s
+          const nodes = new Map(s.nodes)
+          nodes.set(id, { ...node, agentStatus: 'idle' })
+          return syncBack(nodes, s)
+        })
+      }, 6000)
+    }
+  },
+
+  trackFocus: (id) => {
+    const node = get().nodes.get(id)
+    if (!node) return
+    const focusCount = (node.focusCount ?? 0) + 1
+    const lastFocusedAt = Date.now()
+    set((s) => {
+      const n = s.nodes.get(id)
+      if (!n) return s
+      const nodes = new Map(s.nodes)
+      nodes.set(id, { ...n, focusCount, lastFocusedAt })
+      return syncBack(nodes, s)
+    })
+    // Fire-and-forget persist
+    window.agent?.saveMetadata(id, { focusCount, lastFocusedAt }).catch(() => {})
+  },
 
   add: (type, x, y, props = {}) => {
     const id = nanoid()

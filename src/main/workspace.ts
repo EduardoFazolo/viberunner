@@ -10,6 +10,7 @@ import {
   getAppState, setAppState,
   mergeNodeProps,
   getBrowserSessions, saveBrowserSession, deleteBrowserSession,
+  getNodeMetadata, upsertNodeMetadata,
   WorkspaceRow, NodeRow, CameraRow, BrowserSessionRow,
 } from './database'
 
@@ -76,6 +77,16 @@ export function setupWorkspaceHandlers(): void {
 
   ipcMain.handle('terminal:saveState', (_e, nodeId: string, serializedState: string) =>
     mergeNodeProps(nodeId, { serializedState })
+  )
+
+  // -------------------------------------------------------------------------
+  // Node metadata (focus tracking, tags)
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle('agent:getMetadata', (_e, nodeIds: string[]) => getNodeMetadata(nodeIds))
+
+  ipcMain.handle('agent:saveMetadata', (_e, nodeId: string, patch: Record<string, unknown>) =>
+    upsertNodeMetadata(nodeId, patch as any)
   )
 
   // -------------------------------------------------------------------------

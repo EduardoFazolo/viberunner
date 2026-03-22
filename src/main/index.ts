@@ -4,6 +4,8 @@ import { is } from '@electron-toolkit/utils'
 import { setupPtyHandlers, killAllPtys, cleanupOrphanSessions } from './pty'
 import { initDatabase, getAllNodeIds } from './database'
 import { setupWorkspaceHandlers } from './workspace'
+import { startAgentSignalServer } from './agentSignalServer'
+import { setupAgentTools } from './agentHooks'
 import { tmuxManager } from './tmux'
 import { setupBrowserSession } from './browserSession'
 import { setupBrowserViewHandlers, destroyAllBrowserViews } from './browserViewManager'
@@ -81,6 +83,7 @@ function createWindow(): void {
   }
 
   setupPtyHandlers(() => mainWindow?.webContents ?? null)
+  startAgentSignalServer(() => mainWindow?.webContents ?? null)
 
   // Apply session setup to every webview that attaches (covers named sessions too)
   mainWindow.webContents.on('did-attach-webview', (_event, webviewContents: WebContents) => {
@@ -134,6 +137,7 @@ app.whenReady().then(async () => {
   }
   setupWorkspaceHandlers()
   setupBrowserViewHandlers()
+  setupAgentTools()
   registerNotionHandlers(ipcMain)
   registerTrelloHandlers(ipcMain)
   registerGitHandlers(ipcMain)

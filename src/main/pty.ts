@@ -1,6 +1,8 @@
 import { ipcMain, WebContents } from 'electron'
 import * as os from 'os'
+import { join } from 'path'
 import { tmuxManager } from './tmux'
+import { AGENT_SIGNAL_PORT } from './agentSignalServer'
 
 interface IPty {
   write(data: string): void
@@ -30,11 +32,20 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
     // Strip TERM_SESSION_ID so zsh doesn't share/corrupt macOS shell session files
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { TERM_SESSION_ID: _sid, ...baseEnv } = process.env
+    const canvaBin = join(os.homedir(), '.canvaflow', 'bin')
+    const existingPath = baseEnv.PATH ?? ''
     const spawnOpts = {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
-      env: { ...baseEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+      env: {
+        ...baseEnv,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        CANVAFLOW_NODE_ID: id,
+        CANVAFLOW_PORT: String(AGENT_SIGNAL_PORT),
+        PATH: existingPath.includes(canvaBin) ? existingPath : `${canvaBin}:${existingPath}`,
+      },
     }
     let ptyProcess: Awaited<ReturnType<typeof pty.spawn>>
     try {

@@ -45,6 +45,13 @@ export interface BrowserSessionRow {
   createdAt: number
 }
 
+export interface NodeMetadataRow {
+  nodeId: string
+  lastFocusedAt: number
+  focusCount: number
+  tags: string // JSON array string
+}
+
 // ---------------------------------------------------------------------------
 // DB instance
 // ---------------------------------------------------------------------------
@@ -112,6 +119,13 @@ function migrate(): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_canvas_nodes_workspace ON canvas_nodes(workspaceId);
+
+    CREATE TABLE IF NOT EXISTS node_metadata (
+      nodeId       TEXT PRIMARY KEY,
+      lastFocusedAt INTEGER NOT NULL DEFAULT 0,
+      focusCount   INTEGER NOT NULL DEFAULT 0,
+      tags         TEXT NOT NULL DEFAULT '[]'
+    );
 
     CREATE TABLE IF NOT EXISTS browser_sessions (
       id        TEXT PRIMARY KEY,
@@ -255,4 +269,34 @@ export function setAppState(key: string, value: string): void {
     INSERT INTO app_state (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
   `).run(key, value)
+}
+
+// ---------------------------------------------------------------------------
+// Node metadata (focus tracking, tags) — separate from canvas_nodes to avoid
+// high-frequency spatial writes touching slower-changing metadata
+// ---------------------------------------------------------------------------
+
+export function getNodeMetadata(nodeIds: string[]): NodeMetadataRow[] {
+  if (nodeIds.length === 0) return []
+  const placeholders = nodeIds.map(() => '?').join(',')
+  return db.prepare(`SELECT * FROM node_metadata WHERE nodeId IN (${placeholders})`)
+    .all(...nodeIds) as NodeMetadataRow[]
+}
+
+export function upsertNodeMetadata(nodeId: string, patch: Partial<Omit<NodeMetadataRow, 'nodeId'>>): void {
+  const existing = db.prepare('SELECT * FROM node_metadata WHERE nodeId = ?').get(nodeId) as NodeMetadataRow | null
+  const row: NodeMetadataRow = {
+    nodeId,
+    lastFocusedAt: patch.lastFocusedAt ?? existing?.lastFocusedAt ?? 0,
+    focusCount: patch.focusCount ?? existing?.focusCount ?? 0,
+    tags: patch.tags ?? existing?.tags ?? '[]',
+  }
+  db.prepare(`
+    INSERT INTO node_metadata (nodeId, lastFocusedAt, focusCount, tags)
+    VALUES (@nodeId, @lastFocusedAt, @focusCount, @tags)
+    ON CONFLICT(nodeId) DO UPDATE SET
+      lastFocusedAt = excluded.lastFocusedAt,
+      focusCount = excluded.focusCount,
+      tags = excluded.tags
+  `).run(row)
 }

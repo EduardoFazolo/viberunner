@@ -7,12 +7,14 @@ import { ViewLayer } from './components/ViewLayer'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useAgentStatus } from './hooks/useAgentStatus'
 import { useViewStore } from './stores/viewStore'
 import { setCanvasViewport } from './stores/canvasViewportStore'
 
 export default function App(): React.ReactElement {
   useWorkspaceInit()
   useAutoSave()
+  useAgentStatus()
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [paletteOpen, setPaletteOpen] = useState(false)
