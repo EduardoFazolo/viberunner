@@ -86,6 +86,30 @@ describe('cameraStore.zoomAt', () => {
     store.zoomAt(0, 0, -1_000_000)
     expect(useCameraStore.getState().camera.zoom).toBeLessThanOrEqual(5)
   })
+
+  it('ignores NaN screenX — camera stays unchanged', () => {
+    const before = { ...useCameraStore.getState().camera }
+    useCameraStore.getState().zoomAt(NaN, 0, 100)
+    expect(useCameraStore.getState().camera).toEqual(before)
+  })
+
+  it('ignores NaN screenY — camera stays unchanged', () => {
+    const before = { ...useCameraStore.getState().camera }
+    useCameraStore.getState().zoomAt(0, NaN, 100)
+    expect(useCameraStore.getState().camera).toEqual(before)
+  })
+
+  it('ignores NaN delta — camera stays unchanged', () => {
+    const before = { ...useCameraStore.getState().camera }
+    useCameraStore.getState().zoomAt(200, 150, NaN)
+    expect(useCameraStore.getState().camera).toEqual(before)
+  })
+
+  it('ignores Infinity delta — camera stays unchanged', () => {
+    const before = { ...useCameraStore.getState().camera }
+    useCameraStore.getState().zoomAt(200, 150, Infinity)
+    expect(useCameraStore.getState().camera).toEqual(before)
+  })
 })
 
 // ---------------------------------------------------------------------------
