@@ -177,6 +177,8 @@ contextBridge.exposeInMainWorld('browser', {
   focus: (nodeId: string): void => ipcRenderer.send('browser:focus', nodeId),
   capture: (nodeId: string): Promise<string | null> =>
     ipcRenderer.invoke('browser:capture', nodeId),
+  captureAndHide: (nodeId: string): Promise<{ dataUrl: string | null; didHide: boolean }> =>
+    ipcRenderer.invoke('browser:capture-and-hide', nodeId),
   executeJS: (nodeId: string, js: string): Promise<unknown> =>
     ipcRenderer.invoke('browser:execute-js', nodeId, js),
   onEvent: (callback: (nodeId: string, event: string, data: Record<string, unknown>) => void): () => void => {

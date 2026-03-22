@@ -87,6 +87,8 @@ vi.mock('../main/browserSession', () => ({
 }))
 
 import {
+  captureAndHideBrowserView,
+  captureBrowserView,
   createBrowserView,
   destroyAllBrowserViews,
   setBrowserViewVisible,
@@ -107,6 +109,16 @@ function latestBounds(view: InstanceType<typeof electronMocks.MockWebContentsVie
   const call = view.setBounds.mock.calls.at(-1)
   if (!call) throw new Error('Expected setBounds to be called')
   return call[0]
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 beforeEach(() => {
@@ -201,6 +213,126 @@ describe('browserViewManager boundary stress', () => {
       y: 90,
       width: 280,
       height: 300,
+    })
+  })
+
+  it('captures the live frame before parking the Browser V2 view off-screen', async () => {
+    createBrowserView('node-4', 'persist:test', 'https://example.com', {
+      x: 280,
+      y: 120,
+      width: 420,
+      height: 260,
+    })
+
+    const view = latestView()
+    setBrowserViewVisible('node-4', true)
+    view.setBounds.mockClear()
+
+    const result = await captureAndHideBrowserView('node-4')
+
+    expect(result).toEqual({
+      dataUrl: 'data:image/png;base64,test',
+      didHide: true,
+    })
+    expect(view.webContents.capturePage).toHaveBeenCalledOnce()
+    expect(view.setBounds.mock.calls[0]?.[0]).toEqual({
+      x: 280,
+      y: 120,
+      width: 420,
+      height: 260,
+    })
+    expect(latestBounds(view)).toEqual(OFF_SCREEN)
+    expect(view.webContents.capturePage.mock.invocationCallOrder[0]).toBeLessThan(
+      view.setBounds.mock.invocationCallOrder.at(-1) ?? Infinity
+    )
+  })
+
+  it('never captures a hidden Browser V2 view from OFF_SCREEN bounds', async () => {
+    createBrowserView('node-5', 'persist:test', 'https://example.com', {
+      x: 280,
+      y: 120,
+      width: 420,
+      height: 260,
+    })
+
+    const view = latestView()
+    setBrowserViewVisible('node-5', true)
+    setBrowserViewVisible('node-5', false)
+    view.webContents.capturePage.mockClear()
+
+    const dataUrl = await captureBrowserView('node-5')
+
+    expect(dataUrl).toBeNull()
+    expect(view.webContents.capturePage).not.toHaveBeenCalled()
+    expect(latestBounds(view)).toEqual(OFF_SCREEN)
+  })
+
+  it('ignores stale late capture results and keeps the newer screenshot cached', async () => {
+    createBrowserView('node-6', 'persist:test', 'https://example.com', {
+      x: 300,
+      y: 140,
+      width: 360,
+      height: 240,
+    })
+
+    const view = latestView()
+    setBrowserViewVisible('node-6', true)
+
+    const first = deferred<{ toDataURL: () => string }>()
+    const second = deferred<{ toDataURL: () => string }>()
+    view.webContents.capturePage
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+
+    const firstCapture = captureBrowserView('node-6')
+    const secondCapture = captureBrowserView('node-6')
+
+    second.resolve({ toDataURL: () => 'data:image/png;base64,newer' })
+    await expect(secondCapture).resolves.toBe('data:image/png;base64,newer')
+
+    first.resolve({ toDataURL: () => 'data:image/png;base64,older' })
+    await expect(firstCapture).resolves.toBe('data:image/png;base64,newer')
+
+    setBrowserViewVisible('node-6', false)
+    await expect(captureBrowserView('node-6')).resolves.toBe('data:image/png;base64,newer')
+  })
+
+  it('uses the latest cached live bounds for capture-and-hide and restores them on re-show', async () => {
+    createBrowserView('node-7', 'persist:test', 'https://example.com', {
+      x: 320,
+      y: 160,
+      width: 400,
+      height: 240,
+    })
+
+    const view = latestView()
+    setBrowserViewVisible('node-7', true)
+    updateBrowserViewBounds('node-7', {
+      x: 180,
+      y: 160,
+      width: 400,
+      height: 240,
+    })
+
+    view.setBounds.mockClear()
+    await captureAndHideBrowserView('node-7')
+
+    expect(view.setBounds.mock.calls[0]?.[0]).toEqual({
+      x: 240,
+      y: 160,
+      width: 340,
+      height: 240,
+    })
+    expect(latestBounds(view)).toEqual(OFF_SCREEN)
+
+    view.setBounds.mockClear()
+    setBrowserViewVisible('node-7', true)
+
+    expect(latestBounds(view)).toEqual({
+      x: 240,
+      y: 160,
+      width: 340,
+      height: 240,
     })
   })
 })

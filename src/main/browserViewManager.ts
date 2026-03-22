@@ -5,6 +5,19 @@ import { setupBrowserSession } from './browserSession'
 interface ViewEntry {
   view: WebContentsView
   partition: string
+  snapshot: SnapshotState
+}
+
+interface SnapshotState {
+  lastLiveBounds: { x: number; y: number; width: number; height: number } | null
+  latestCaptureToken: number
+  inFlightCaptureToken: number | null
+  lastSuccessfulDataUrl: string | null
+}
+
+interface CaptureResult {
+  dataUrl: string | null
+  didHide: boolean
 }
 
 const views = new Map<string, ViewEntry>()
@@ -38,6 +51,11 @@ function makeSession(partition: string) {
   const ses = session.fromPartition(partition)
   setupBrowserSession(ses)
   return ses
+}
+
+function invalidateSnapshotCapture(entry: ViewEntry): void {
+  entry.snapshot.latestCaptureToken += 1
+  entry.snapshot.inFlightCaptureToken = null
 }
 
 function attachListeners(nodeId: string, view: WebContentsView): void {
@@ -101,7 +119,16 @@ export function createBrowserView(
     },
   })
 
-  views.set(nodeId, { view, partition })
+  views.set(nodeId, {
+    view,
+    partition,
+    snapshot: {
+      lastLiveBounds: null,
+      latestCaptureToken: 0,
+      inFlightCaptureToken: null,
+      lastSuccessfulDataUrl: null,
+    },
+  })
   boundsCache.set(nodeId, bounds)
   visibilityState.set(nodeId, false)
   win.contentView.addChildView(view)
@@ -139,6 +166,12 @@ export function changeBrowserViewSession(
 
 export function setCanvasLeft(left: number): void {
   canvasLeft = Math.round(left)
+  if (!canvasActive) return
+  for (const [nodeId, entry] of views) {
+    if (!visibilityState.get(nodeId)) continue
+    const cached = boundsCache.get(nodeId)
+    if (cached) applyBounds(entry, cached)
+  }
 }
 
 function applyBounds(entry: ViewEntry, bounds: { x: number; y: number; width: number; height: number }): void {
@@ -154,12 +187,14 @@ function applyBounds(entry: ViewEntry, bounds: { x: number; y: number; width: nu
   const height = Math.max(bottom - y, 1)
   const maxW = winBounds ? winBounds.width - x : width
   const maxH = winBounds ? winBounds.height - y : height
-  entry.view.setBounds({
+  const appliedBounds = {
     x,
     y,
     width: Math.min(width, Math.max(maxW, 1)),
     height: Math.min(height, Math.max(maxH, 1)),
-  })
+  }
+  entry.snapshot.lastLiveBounds = appliedBounds
+  entry.view.setBounds(appliedBounds)
 }
 
 export function updateBrowserViewBounds(
@@ -180,6 +215,7 @@ export function setBrowserViewVisible(nodeId: string, visible: boolean): void {
   if (!entry) return
   visibilityState.set(nodeId, visible)
   if (visible && canvasActive) {
+    invalidateSnapshotCapture(entry)
     // Move to last known bounds, enforcing the canvas left boundary.
     const cached = boundsCache.get(nodeId)
     if (cached) applyBounds(entry, cached)
@@ -247,11 +283,64 @@ export function focusBrowserView(nodeId: string): void {
 export async function captureBrowserView(nodeId: string): Promise<string | null> {
   const entry = views.get(nodeId)
   if (!entry) return null
+  if (!visibilityState.get(nodeId) || !canvasActive) {
+    return entry.snapshot.lastSuccessfulDataUrl
+  }
+
+  const liveBounds = entry.snapshot.lastLiveBounds ?? boundsCache.get(nodeId)
+  if (liveBounds) applyBounds(entry, liveBounds)
+
+  const token = ++entry.snapshot.latestCaptureToken
+  entry.snapshot.inFlightCaptureToken = token
+
   try {
     const img = await entry.view.webContents.capturePage()
-    return img.toDataURL()
+    const dataUrl = img.toDataURL()
+    if (entry.snapshot.latestCaptureToken !== token) {
+      return entry.snapshot.lastSuccessfulDataUrl
+    }
+    entry.snapshot.lastSuccessfulDataUrl = dataUrl
+    return dataUrl
   } catch {
-    return null
+    return entry.snapshot.lastSuccessfulDataUrl
+  } finally {
+    if (entry.snapshot.inFlightCaptureToken === token) {
+      entry.snapshot.inFlightCaptureToken = null
+    }
+  }
+}
+
+export async function captureAndHideBrowserView(nodeId: string): Promise<CaptureResult> {
+  const entry = views.get(nodeId)
+  if (!entry) return { dataUrl: null, didHide: false }
+  if (!visibilityState.get(nodeId) || !canvasActive) {
+    return { dataUrl: entry.snapshot.lastSuccessfulDataUrl, didHide: false }
+  }
+
+  const liveBounds = entry.snapshot.lastLiveBounds ?? boundsCache.get(nodeId)
+  if (liveBounds) applyBounds(entry, liveBounds)
+
+  const token = ++entry.snapshot.latestCaptureToken
+  entry.snapshot.inFlightCaptureToken = token
+
+  try {
+    const img = await entry.view.webContents.capturePage()
+    const dataUrl = img.toDataURL()
+
+    if (entry.snapshot.latestCaptureToken !== token) {
+      return { dataUrl: entry.snapshot.lastSuccessfulDataUrl, didHide: false }
+    }
+
+    entry.snapshot.lastSuccessfulDataUrl = dataUrl
+    visibilityState.set(nodeId, false)
+    entry.view.setBounds(OFF_SCREEN)
+    return { dataUrl, didHide: true }
+  } catch {
+    return { dataUrl: entry.snapshot.lastSuccessfulDataUrl, didHide: false }
+  } finally {
+    if (entry.snapshot.inFlightCaptureToken === token) {
+      entry.snapshot.inFlightCaptureToken = null
+    }
   }
 }
 
@@ -311,6 +400,7 @@ export function setupBrowserViewHandlers(): void {
   ipcMain.on('browser:focus', (_e, nodeId: string) => { focusBrowserView(nodeId) })
 
   ipcMain.handle('browser:capture', (_e, nodeId: string) => captureBrowserView(nodeId))
+  ipcMain.handle('browser:capture-and-hide', (_e, nodeId: string) => captureAndHideBrowserView(nodeId))
 
   ipcMain.handle('browser:execute-js', (_e, nodeId: string, js: string) => executeBrowserViewJS(nodeId, js))
 

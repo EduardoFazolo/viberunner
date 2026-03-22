@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { fitAllNodes } from '../utils/canvasUtils'
+import { notifyCanvasInteractionEnd, notifyCanvasInteractionStart } from '../utils/canvasInteraction'
 import { getActiveWorkspace } from '../stores/workspaceStore'
 
 interface Options {
@@ -71,13 +72,19 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
           break
         }
         case 'fitAll':
+          notifyCanvasInteractionStart()
           fitAllNodes(useNodeStore.getState().nodes)
+          setTimeout(() => notifyCanvasInteractionEnd(), 180)
           break
         case 'zoomIn':
+          notifyCanvasInteractionStart()
           useCameraStore.getState().zoomByFactor(1.25)
+          setTimeout(() => notifyCanvasInteractionEnd(), 180)
           break
         case 'zoomOut':
+          notifyCanvasInteractionStart()
           useCameraStore.getState().zoomByFactor(1 / 1.25)
+          setTimeout(() => notifyCanvasInteractionEnd(), 180)
           break
         case 'search':
           onSearch()

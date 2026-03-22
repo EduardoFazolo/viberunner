@@ -3,6 +3,7 @@ import { useCameraStore, updateCursorPos, cancelCameraAnimation } from '../store
 import { useSettingsStore } from '../stores/settingsStore'
 import { useNodeStore } from '../stores/nodeStore'
 import { zoomFitNode, zoomExit } from '../utils/zoomFocus'
+import { notifyCanvasInteractionEnd, notifyCanvasInteractionStart } from '../utils/canvasInteraction'
 import { GridRenderer } from './GridRenderer'
 import { CanvasOverlay } from './CanvasOverlay'
 import { NodeLayer } from './NodeLayer'
@@ -17,7 +18,21 @@ export function Canvas(): React.ReactElement {
   const isPanningRef = useRef(false)
   const lastPos = useRef({ x: 0, y: 0 })
   const spaceHeldRef = useRef(false)
+  const interactionEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [spaceHeld, setSpaceHeld] = useState(false)
+
+  const startCanvasInteraction = useCallback(() => {
+    notifyCanvasInteractionStart()
+    if (interactionEndTimerRef.current) clearTimeout(interactionEndTimerRef.current)
+  }, [])
+
+  const scheduleCanvasInteractionEnd = useCallback((delay = 180) => {
+    if (interactionEndTimerRef.current) clearTimeout(interactionEndTimerRef.current)
+    interactionEndTimerRef.current = setTimeout(() => {
+      interactionEndTimerRef.current = null
+      notifyCanvasInteractionEnd()
+    }, delay)
+  }, [])
 
   // Double-tap on a node (title bar / terminal content / any host-page area) to zoom-fit;
   // double-tap again to zoom back out.
@@ -71,6 +86,7 @@ export function Canvas(): React.ReactElement {
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+      startCanvasInteraction()
       cancelCameraAnimation()
       const rect = el.getBoundingClientRect()
       const localX = e.clientX - rect.left
@@ -85,17 +101,19 @@ export function Canvas(): React.ReactElement {
           pan(-e.deltaX, -e.deltaY)
         }
       }
+      scheduleCanvasInteractionEnd()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [pan, zoomAt])
+  }, [pan, scheduleCanvasInteractionEnd, startCanvasInteraction, zoomAt])
 
   const startPan = useCallback((e: React.PointerEvent) => {
+    startCanvasInteraction()
     isPanningRef.current = true
     lastPos.current = { x: e.clientX, y: e.clientY }
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     e.preventDefault()
-  }, [])
+  }, [startCanvasInteraction])
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     // Clicking the canvas background deactivates any focused node.
@@ -112,10 +130,18 @@ export function Canvas(): React.ReactElement {
     if (!isPanningRef.current) return
     pan(e.clientX - lastPos.current.x, e.clientY - lastPos.current.y)
     lastPos.current = { x: e.clientX, y: e.clientY }
-  }, [pan])
+    scheduleCanvasInteractionEnd()
+  }, [pan, scheduleCanvasInteractionEnd])
 
   const onPointerUp = useCallback(() => {
     isPanningRef.current = false
+    scheduleCanvasInteractionEnd(120)
+  }, [scheduleCanvasInteractionEnd])
+
+  useEffect(() => {
+    return () => {
+      if (interactionEndTimerRef.current) clearTimeout(interactionEndTimerRef.current)
+    }
   }, [])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {

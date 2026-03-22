@@ -9,6 +9,15 @@ import { registerBrowserPaster, unregisterBrowserPaster } from '../browserRegist
 import { zoomFitNode, zoomExit } from '../utils/zoomFocus'
 import { useCanvasViewportStore } from '../stores/canvasViewportStore'
 import {
+  beginBrowserFreeze,
+  createBrowserSnapshotHandoff,
+  hideBrowserScreenshot,
+  resolveBrowserFreeze,
+  setBrowserSnapshot,
+  showBrowserLive,
+} from '../utils/browserSnapshotHandoff'
+import { onCanvasInteractionEnd, onCanvasInteractionStart } from '../utils/canvasInteraction'
+import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
 } from './ui/context-menu'
@@ -305,6 +314,7 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
   const [urlBar, setUrlBar] = useState<string>(webviewSrcRef.current)
   const [loading, setLoading] = useState(false)
   const [thumbnail, setThumbnail] = useState<string | null>(null)
+  const [hasScreenshot, setHasScreenshot] = useState(false)
   const [viewCreated, setViewCreated] = useState(false)
   const viewCreatedRef = useRef(false)
   useEffect(() => { viewCreatedRef.current = viewCreated }, [viewCreated])
@@ -312,8 +322,11 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
   // Screenshot freeze-during-movement — fully imperative, no React state
   const screenshotRef = useRef<string | null>(null)
   const frozenImgRef = useRef<HTMLImageElement>(null)
-  const isFrozenRef = useRef(false)
+  const screenshotPlacementRef = useRef({ left: 0, top: 0, width: node.width, height: node.height - TITLE_H - TOOLBAR_H })
+  const handoffRef = useRef(createBrowserSnapshotHandoff())
   const moveEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshSnapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const canvasInteractionActiveRef = useRef(false)
   const shouldShowRef = useRef(false)
 
   // Track camera zoom without re-rendering on every change
@@ -325,6 +338,8 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  const webviewHeight = node.height - TITLE_H - TOOLBAR_H
 
   // Compute bounds from camera state + node coords.
   // vpLeft/vpTop come from canvasViewportStore — updated by App.tsx on every frame
@@ -377,63 +392,155 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
     window.browser.updateBounds(node.id, bounds)
   }, [node.id, getBounds])
 
-  const sendBoundsAndZoom = useCallback((cameraZoom: number) => {
-    const bounds = getBounds()
-    if (!bounds) return
-    window.browser.updateBounds(node.id, bounds)
-    window.browser.setZoomFactor(node.id, cameraZoom * contentScaleRef.current)
-  }, [node.id, getBounds])
+  const getScreenshotPlacement = useCallback(
+    (camera: { x: number; y: number; zoom: number }) => {
+      const { left: vpLeft, top: vpTop } = useCanvasViewportStore.getState()
+      const zoom = camera.zoom
+      if (zoom <= 0) {
+        return { left: 0, top: 0, width: node.width, height: webviewHeight }
+      }
+
+      const sx = vpLeft + camera.x + node.x * zoom
+      const syFull = vpTop + camera.y + node.y * zoom
+      const sy = syFull + (TITLE_H + TOOLBAR_H) * zoom
+      const visibleBounds = getBoundsDirect(camera)
+      if (!visibleBounds) {
+        return { left: 0, top: 0, width: node.width, height: webviewHeight }
+      }
+
+      return {
+        left: Math.max(0, (visibleBounds.x - sx) / zoom),
+        top: Math.max(0, (visibleBounds.y - sy) / zoom),
+        width: Math.min(node.width, visibleBounds.width / zoom),
+        height: Math.min(webviewHeight, visibleBounds.height / zoom),
+      }
+    },
+    [getBoundsDirect, node.width, node.x, node.y, webviewHeight]
+  )
 
   // ---------------------------------------------------------------------------
   // Freeze-during-movement: show a DOM screenshot while the canvas is moving
   // so the frozen image tracks the node frame (CSS transform) with zero lag.
   // ---------------------------------------------------------------------------
 
-  const captureSnapshot = useCallback(() => {
-    if (!viewCreatedRef.current) return
+  const applyScreenshotPlacement = useCallback(() => {
+    const img = frozenImgRef.current
+    if (!img) return
+    const placement = screenshotPlacementRef.current
+    img.style.left = `${placement.left}px`
+    img.style.top = `${placement.top}px`
+    img.style.width = `${placement.width}px`
+    img.style.height = `${placement.height}px`
+  }, [])
+
+  const applyHandoff = useCallback((next: ReturnType<typeof createBrowserSnapshotHandoff>) => {
+    handoffRef.current = next
+    screenshotRef.current = next.screenshot
+    setHasScreenshot(Boolean(next.screenshot))
+    if (next.screenshot) {
+      setThumbnail(next.screenshot)
+      if (frozenImgRef.current) frozenImgRef.current.src = next.screenshot
+      applyScreenshotPlacement()
+    }
+    if (frozenImgRef.current) {
+      frozenImgRef.current.style.display = next.screenshotVisible ? 'block' : 'none'
+    }
+  }, [applyScreenshotPlacement])
+
+  const storeSnapshot = useCallback((url: string | null, placement?: { left: number; top: number; width: number; height: number }) => {
+    if (!url) return
+    if (placement) screenshotPlacementRef.current = placement
+    applyHandoff(setBrowserSnapshot(handoffRef.current, url))
+  }, [applyHandoff])
+
+  const refreshSnapshotNow = useCallback(() => {
+    if (!viewCreatedRef.current || !shouldShowRef.current) return
+    const placement = getScreenshotPlacement(useCameraStore.getState().camera)
     window.browser.capture(node.id).then((url) => {
       if (!url) return
-      screenshotRef.current = url
-      // Pre-load into the always-present img so it's already decoded when we freeze
-      if (frozenImgRef.current) frozenImgRef.current.src = url
+      storeSnapshot(url, placement)
     })
-  }, [node.id])
+  }, [getScreenshotPlacement, node.id, storeSnapshot])
 
-  const freeze = useCallback(() => {
-    if (!shouldShowRef.current) return      // view is hidden, nothing to freeze
-    if (isFrozenRef.current) return         // already frozen
-    // Only freeze if we have a screenshot to show — never hide the live view
-    // with nothing to replace it (that would show the background as white).
-    if (!screenshotRef.current) return
-    isFrozenRef.current = true
-    const img = frozenImgRef.current
-    if (img) img.style.display = 'block'
-    window.browser.setVisible(node.id, false)
-  }, [node.id])
+  const scheduleSnapshotRefresh = useCallback((delay = 120) => {
+    if (refreshSnapshotTimerRef.current) clearTimeout(refreshSnapshotTimerRef.current)
+    refreshSnapshotTimerRef.current = setTimeout(() => {
+      refreshSnapshotTimerRef.current = null
+      refreshSnapshotNow()
+    }, delay)
+  }, [refreshSnapshotNow])
+
+  const freeze = useCallback((options?: { forceHide?: boolean }) => {
+    const forceHide = options?.forceHide ?? false
+    if (!viewCreatedRef.current) return
+    if (!forceHide && !shouldShowRef.current) return
+
+    const current = handoffRef.current
+    const transition = current.screenshot
+      ? beginBrowserFreeze(current)
+      : { next: current, requestId: null, shouldCaptureAndHide: false as const }
+
+    if (transition.next !== current) {
+      applyHandoff(transition.next)
+    }
+
+    if (transition.shouldCaptureAndHide && transition.requestId != null) {
+      const requestId = transition.requestId
+      window.browser.captureAndHide(node.id).then((result) => {
+        const next = resolveBrowserFreeze(handoffRef.current, requestId, result)
+        if (next === handoffRef.current) return
+        applyHandoff(next)
+      })
+      return
+    }
+
+    if (!forceHide) return
+    if (current.handoffState === 'frozen' && current.screenshot) {
+      window.browser.setVisible(node.id, false)
+      applyHandoff({ ...current, screenshotVisible: true })
+      return
+    }
+
+    const placement = getScreenshotPlacement(useCameraStore.getState().camera)
+    window.browser.captureAndHide(node.id).then((result) => {
+      if (result.dataUrl) storeSnapshot(result.dataUrl, placement)
+      if (!result.didHide) return
+      applyHandoff({
+        ...handoffRef.current,
+        handoffState: 'frozen',
+        activeFreezeRequestId: null,
+        screenshotVisible: Boolean(result.dataUrl ?? handoffRef.current.screenshot),
+      })
+    })
+  }, [applyHandoff, getScreenshotPlacement, node.id, storeSnapshot])
+
+  const showLiveView = useCallback(() => {
+    if (!viewCreatedRef.current) return
+    const next = showBrowserLive(handoffRef.current)
+    applyHandoff(next)
+    const bounds = getBoundsDirectRef.current(useCameraStore.getState().camera)
+    if (bounds) {
+      window.browser.updateBounds(node.id, bounds)
+      window.browser.setVisible(node.id, true)
+      requestAnimationFrame(() => {
+        if (handoffRef.current.handoffState !== 'live') return
+        applyHandoff(hideBrowserScreenshot(handoffRef.current))
+      })
+      scheduleSnapshotRefresh()
+    } else {
+      window.browser.setVisible(node.id, false)
+      applyHandoff(hideBrowserScreenshot(handoffRef.current))
+    }
+  }, [applyHandoff, node.id, scheduleSnapshotRefresh])
 
   const scheduleUnfreeze = useCallback(() => {
     if (moveEndTimerRef.current) clearTimeout(moveEndTimerRef.current)
     moveEndTimerRef.current = setTimeout(() => {
-      if (!isFrozenRef.current) return
-      isFrozenRef.current = false
       if (shouldShowRef.current) {
-        const bounds = getBoundsDirect(useCameraStore.getState().camera)
-        if (bounds) {
-          // Show live view first, then hide screenshot — native view is always on
-          // top so the screenshot is already behind it; hiding it a frame late
-          // prevents any gap where neither the screenshot nor the view is visible.
-          window.browser.updateBounds(node.id, bounds)
-          window.browser.setVisible(node.id, true)
-          captureSnapshot() // refresh for next movement/unfocus
-          const img = frozenImgRef.current
-          if (img) requestAnimationFrame(() => { img.style.display = 'none' })
-        }
-        // If bounds is null: node is fully behind sidebar or off-screen.
-        // Keep view hidden and screenshot visible until next movement brings it back.
+        showLiveView()
       }
-      // If not focused, the img stays visible (it's the idle screenshot)
     }, 150)
-  }, [node.id, getBoundsDirect, captureSnapshot])
+  }, [showLiveView])
 
   // ---------------------------------------------------------------------------
   // Lifecycle: create / destroy WebContentsView
@@ -450,6 +557,32 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // intentionally mount/unmount only
+
+  useEffect(() => {
+    return () => {
+      if (moveEndTimerRef.current) clearTimeout(moveEndTimerRef.current)
+      if (refreshSnapshotTimerRef.current) clearTimeout(refreshSnapshotTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    const offStart = onCanvasInteractionStart(() => {
+      canvasInteractionActiveRef.current = true
+      if (moveEndTimerRef.current) {
+        clearTimeout(moveEndTimerRef.current)
+        moveEndTimerRef.current = null
+      }
+      freeze({ forceHide: !shouldShowRef.current })
+    })
+    const offEnd = onCanvasInteractionEnd(() => {
+      canvasInteractionActiveRef.current = false
+      scheduleUnfreeze()
+    })
+    return () => {
+      offStart()
+      offEnd()
+    }
+  }, [freeze, scheduleUnfreeze])
 
   // ---------------------------------------------------------------------------
   // Session changes: recreate with new partition
@@ -477,40 +610,14 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
     shouldShowRef.current = shouldShow
 
     if (shouldShow) {
-      // Abort any in-progress freeze
-      if (isFrozenRef.current) {
-        isFrozenRef.current = false
-        if (moveEndTimerRef.current) clearTimeout(moveEndTimerRef.current)
-      }
-      const bounds = getBoundsDirectRef.current(useCameraStore.getState().camera)
-      if (bounds) {
-        // Show live view first, then hide screenshot on next frame — avoids
-        // the white gap between hiding the screenshot and the native view painting.
-        window.browser.updateBounds(node.id, bounds)
-        window.browser.setVisible(node.id, true)
-        captureSnapshot() // keep screenshot fresh for next unfocus
-        const img = frozenImgRef.current
-        if (img) requestAnimationFrame(() => { img.style.display = 'none' })
-      } else {
-        // Node is fully off-screen — ensure live view is hidden even if it was
-        // previously visible (e.g. after thumbnail-mode exit during zoom).
-        window.browser.setVisible(node.id, false)
-        if (frozenImgRef.current) frozenImgRef.current.style.display = 'none'
-      }
+      if (moveEndTimerRef.current) clearTimeout(moveEndTimerRef.current)
+      if (canvasInteractionActiveRef.current) freeze()
+      else showLiveView()
     } else {
-      // Becoming unfocused: hide live view, show last screenshot in DOM
-      if (isFrozenRef.current) {
-        isFrozenRef.current = false
-        if (moveEndTimerRef.current) clearTimeout(moveEndTimerRef.current)
-      }
-      window.browser.setVisible(node.id, false)
-      // Show last known screenshot immediately (DOM img, appears behind sidebar)
-      if (frozenImgRef.current && screenshotRef.current) {
-        frozenImgRef.current.style.display = 'block'
-      }
-      captureSnapshot() // capture current state for next time it's shown
+      if (moveEndTimerRef.current) clearTimeout(moveEndTimerRef.current)
+      freeze({ forceHide: true })
     }
-  }, [isFocused, isActiveWorkspace, isThumbnailMode, viewCreated, node.id, captureSnapshot])
+  }, [isFocused, isActiveWorkspace, isThumbnailMode, viewCreated, freeze, showLiveView])
 
   // ---------------------------------------------------------------------------
   // Bounds: update when camera moves or node resizes
@@ -527,10 +634,10 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
           window.browser.setZoomFactor(node.id, s.camera.zoom * contentScaleRef.current)
         }
       }
-      // Always freeze/unfreeze — even when off-screen, we must hide the live view
-      // so it doesn't float over the sidebar when the node scrolls off-screen.
-      freeze()
-      scheduleUnfreeze()
+      if (!canvasInteractionActiveRef.current) {
+        freeze()
+        scheduleUnfreeze()
+      }
     }
     const unsub = useCameraStore.subscribe(onCameraChange)
     return () => {
@@ -584,9 +691,8 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
       const isBelow = zoom < 0.3
 
       if (!wasBelow && isBelow) {
-        // Transitioning to thumbnail: capture screenshot
         window.browser.capture(node.id).then((dataUrl) => {
-          if (dataUrl) setThumbnail(dataUrl)
+          if (dataUrl) storeSnapshot(dataUrl)
         })
         setIsThumbnailMode(true)
       }
@@ -598,7 +704,7 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
       cameraZoomRef.current = zoom
     })
     return unsub
-  }, [node.id])
+  }, [node.id, storeSnapshot])
 
   // ---------------------------------------------------------------------------
   // Events from main process
@@ -618,7 +724,7 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
           webviewSrcRef.current = url
           update(node.id, { props: { ...useNodeStore.getState().nodes.get(node.id)?.props, url } })
         }
-        captureSnapshot()
+        scheduleSnapshotRefresh(80)
       } else if (eventName === 'did-navigate' || eventName === 'did-navigate-in-page') {
         const url = (data as any).url as string
         if (url) {
@@ -631,6 +737,7 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
             window.lovable.reportStatus(node.id, { loggedIn, url }).catch(() => {})
           }
         }
+        scheduleSnapshotRefresh(160)
       } else if (eventName === 'page-title-updated') {
         const title = (data as any).title as string
         if (title) update(node.id, { title })
@@ -645,7 +752,7 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
       }
     })
     return unsub
-  }, [node.id, node.x, node.y, update, add, setFocusedNodeId, captureSnapshot])
+  }, [node.id, node.x, node.y, update, add, setFocusedNodeId, scheduleSnapshotRefresh])
 
   // ---------------------------------------------------------------------------
   // Canvas gesture events from WebContentsView preload
@@ -783,8 +890,6 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
     const currentProps = useNodeStore.getState().nodes.get(node.id)?.props ?? {}
     update(node.id, { props: { ...currentProps, sessionId: newSessionId } })
   }, [node.id, update])
-
-  const webviewHeight = node.height - TITLE_H - TOOLBAR_H
 
   return (
     <ContextMenu>
@@ -1000,10 +1105,10 @@ export function BrowserNodeV2({ node }: Props): React.ReactElement {
             {/* Always in DOM so the screenshot is pre-decoded; shown/hidden imperatively */}
             <img
               ref={frozenImgRef}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'fill', display: 'none', pointerEvents: 'none' }}
+              style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', display: 'none', pointerEvents: 'none' }}
               alt=""
             />
-            {!isActivated && !screenshotRef.current && <NodePlaceholder icon="browser" />}
+            {!isActivated && !hasScreenshot && <NodePlaceholder icon="browser" />}
           </div>
         </BaseNode>
       </ContextMenuTrigger>

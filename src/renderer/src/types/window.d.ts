@@ -37,6 +37,11 @@ interface CameraRow {
   zoom: number
 }
 
+interface BrowserCaptureAndHideResult {
+  dataUrl: string | null
+  didHide: boolean
+}
+
 declare global {
   interface Window {
     terminal: {
@@ -153,6 +158,28 @@ declare global {
       save: (s: BrowserSessionRow) => Promise<void>
       delete: (id: string) => Promise<void>
       login: (partition: string, url: string) => Promise<void>
+    }
+
+    browser: {
+      create: (nodeId: string, partition: string, url: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>
+      destroy: (nodeId: string) => Promise<void>
+      changeSession: (nodeId: string, partition: string, url: string, bounds: { x: number; y: number; width: number; height: number }) => Promise<void>
+      setCanvasLeft: (left: number) => void
+      setCanvasActive: (active: boolean) => void
+      updateBounds: (nodeId: string, bounds: { x: number; y: number; width: number; height: number }) => void
+      setVisible: (nodeId: string, visible: boolean) => void
+      setZoomFactor: (nodeId: string, factor: number) => void
+      navigate: (nodeId: string, url: string) => void
+      back: (nodeId: string) => void
+      forward: (nodeId: string) => void
+      reload: (nodeId: string) => void
+      stop: (nodeId: string) => void
+      focus: (nodeId: string) => void
+      capture: (nodeId: string) => Promise<string | null>
+      captureAndHide: (nodeId: string) => Promise<BrowserCaptureAndHideResult>
+      executeJS: (nodeId: string, js: string) => Promise<unknown>
+      onEvent: (cb: (nodeId: string, event: string, data: Record<string, unknown>) => void) => () => void
+      onCanvasEvent: (cb: (nodeId: string, channel: string, data: Record<string, unknown>) => void) => () => void
     }
 
     git: {
