@@ -38,6 +38,17 @@ function createWindow(): void {
     mainWindow!.show()
   })
 
+  // Prevent macOS Smart Zoom (two-finger double-tap) and pinch gestures from
+  // scaling the renderer window. The UI uses fixed-pixel native elements
+  // (traffic lights, WebContentsViews) that don't follow CSS zoom, so any
+  // renderer-level zoom breaks the layout.
+  mainWindow.webContents.setVisualZoomLevelLimits(1, 1)
+  mainWindow.webContents.on('zoom-changed', (_event, direction) => {
+    // Swallow zoom-changed so Chromium doesn't apply a semantic zoom either.
+    // Canvas zoom is handled internally via the camera store, not page zoom.
+    void direction
+  })
+
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return
     // Use only meta (Cmd on macOS) so Ctrl+T/B/F/K/etc. pass through to terminals (readline shortcuts)
