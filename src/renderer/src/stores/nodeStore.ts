@@ -1,7 +1,18 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { logAgentDebug } from '../../../shared/agentDebug'
 
 export type NodeType = 'terminal' | 'browser' | 'browserv2' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco'
+
+export type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'executing'
+  | 'modifying_files'
+  | 'done'
+  | 'error'
+  | 'needs_permission'
+  | 'needs_input'
 
 export interface NodeData {
   id: string
@@ -15,6 +26,12 @@ export interface NodeData {
   minimized: boolean
   contentScale: number
   props: Record<string, unknown>
+  // Metadata — persisted in node_metadata table (separate from spatial writes)
+  lastFocusedAt?: number
+  focusCount?: number
+  tags?: string[]
+  // Agent status — ephemeral, reset on restart
+  agentStatus?: AgentStatus
 }
 
 interface NodeStore {
@@ -41,6 +58,10 @@ interface NodeStore {
   selectedNodeIds: Set<string>
   setSelectedNodeIds: (ids: Set<string>) => void
   clearSelection: () => void
+
+  // Agent status & metadata
+  setAgentStatus: (id: string, status: AgentStatus, message?: string) => void
+  trackFocus: (id: string) => void
 }
 
 const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
@@ -90,6 +111,64 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
   setFocusedNodeId: (id) => set({ focusedNodeId: id }),
   setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids }),
   clearSelection: () => set({ selectedNodeIds: new Set() }),
+
+  setAgentStatus: (id, status) => {
+    set((s) => {
+      let targetWorkspaceId: string | null = null
+      let node = s.nodes.get(id)
+
+      if (node) {
+        targetWorkspaceId = s.activeWorkspaceId
+      } else {
+        for (const [workspaceId, workspaceNodes] of s.workspaceNodes.entries()) {
+          const candidate = workspaceNodes.get(id)
+          if (candidate) {
+            targetWorkspaceId = workspaceId
+            node = candidate
+            break
+          }
+        }
+      }
+
+      if (!node || !targetWorkspaceId) return s
+      logAgentDebug('node-store', 'set-agent-status', {
+        nodeId: id,
+        from: node.agentStatus ?? '',
+        to: status,
+        workspaceId: targetWorkspaceId,
+        persistedToDb: false,
+      })
+      const updatedNode = { ...node, agentStatus: status }
+      const workspaceNodes = new Map(s.workspaceNodes)
+      const targetNodes = new Map(workspaceNodes.get(targetWorkspaceId) ?? [])
+      targetNodes.set(id, updatedNode)
+      workspaceNodes.set(targetWorkspaceId, targetNodes)
+
+      if (targetWorkspaceId === s.activeWorkspaceId) {
+        const nodes = new Map(s.nodes)
+        nodes.set(id, updatedNode)
+        return { nodes, workspaceNodes }
+      }
+
+      return { workspaceNodes }
+    })
+  },
+
+  trackFocus: (id) => {
+    const node = get().nodes.get(id)
+    if (!node) return
+    const focusCount = (node.focusCount ?? 0) + 1
+    const lastFocusedAt = Date.now()
+    set((s) => {
+      const n = s.nodes.get(id)
+      if (!n) return s
+      const nodes = new Map(s.nodes)
+      nodes.set(id, { ...n, focusCount, lastFocusedAt })
+      return syncBack(nodes, s)
+    })
+    // Fire-and-forget persist
+    window.agent?.saveMetadata(id, { focusCount, lastFocusedAt }).catch(() => {})
+  },
 
   add: (type, x, y, props = {}) => {
     const id = nanoid()

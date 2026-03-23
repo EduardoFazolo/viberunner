@@ -1,6 +1,10 @@
 import { ipcMain, WebContents } from 'electron'
 import * as os from 'os'
+import { join } from 'path'
 import { tmuxManager } from './tmux'
+import { AGENT_SIGNAL_PORT } from './agentSignalServer'
+import { detectAgentStatusFromTerminalBuffer, sanitizeTerminalOutput } from '../shared/agentStatusDetection'
+import { logAgentDebug, summarizeText } from '../shared/agentDebug'
 
 interface IPty {
   write(data: string): void
@@ -11,6 +15,7 @@ interface IPty {
 }
 
 const ptys = new Map<string, IPty>()
+const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 export function setupPtyHandlers(getWebContents: () => WebContents | null): void {
   ipcMain.handle('terminal:create', async (_event, id: string, workspaceId: string, cwd: string, shell: string) => {
@@ -30,11 +35,20 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
     // Strip TERM_SESSION_ID so zsh doesn't share/corrupt macOS shell session files
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { TERM_SESSION_ID: _sid, ...baseEnv } = process.env
+    const canvaBin = join(os.homedir(), '.canvaflow', 'bin')
+    const existingPath = baseEnv.PATH ?? ''
     const spawnOpts = {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
-      env: { ...baseEnv, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+      env: {
+        ...baseEnv,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        CANVAFLOW_NODE_ID: id,
+        CANVAFLOW_PORT: String(AGENT_SIGNAL_PORT),
+        PATH: existingPath.includes(canvaBin) ? existingPath : `${canvaBin}:${existingPath}`,
+      },
     }
     let ptyProcess: Awaited<ReturnType<typeof pty.spawn>>
     try {
@@ -44,11 +58,62 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
       ptyProcess = pty.spawn(defaultShell, [], { ...spawnOpts, cwd: os.homedir() })
     }
 
+    let statusBuf = ''
+
+    const sendStatus = (status: string) => {
+      logAgentDebug('pty-main', 'emit-status', { nodeId: id, status })
+      const wc = getWebContents()
+      if (wc && !wc.isDestroyed()) wc.send('agent:status', { nodeId: id, status })
+    }
+
+    const clearIdleTimer = () => {
+      const idleTimer = idleTimers.get(id)
+      if (idleTimer) {
+        clearTimeout(idleTimer)
+        idleTimers.delete(id)
+      }
+    }
+
+    const resetIdleTimer = () => {
+      clearIdleTimer()
+      // If no tool-use or stop signal within 90s, assume Claude returned to idle
+      idleTimers.set(id, setTimeout(() => {
+        idleTimers.delete(id)
+        sendStatus('idle')
+      }, 90_000))
+    }
+
     ptyProcess.onData((data: string) => {
       try {
         const wc = getWebContents()
         if (wc && !wc.isDestroyed()) {
           wc.send('terminal:data', id, data)
+
+          const clean = sanitizeTerminalOutput(data)
+          statusBuf = (statusBuf + clean).slice(-4096)
+
+          const detected = detectAgentStatusFromTerminalBuffer(statusBuf)
+          if (detected) {
+            logAgentDebug('pty-main', 'detected-status-from-buffer', {
+              nodeId: id,
+              detected,
+              chunk: summarizeText(clean),
+              bufferTail: summarizeText(statusBuf.slice(-400)),
+            })
+            sendStatus(detected)
+            if (detected === 'idle') {
+              statusBuf = ''
+              clearIdleTimer()
+            } else {
+              resetIdleTimer()
+            }
+          } else if (/What would you like to work on|Do you want to proceed|Esc to cancel|Enter to select/i.test(statusBuf)) {
+            logAgentDebug('pty-main', 'prompt-like-buffer-without-detection', {
+              nodeId: id,
+              chunk: summarizeText(clean),
+              bufferTail: summarizeText(statusBuf.slice(-400)),
+            })
+          }
         }
       } catch {
         // webContents destroyed mid-flight — ignore
@@ -79,6 +144,14 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
   ipcMain.handle('terminal:kill', async (_event, id: string, workspaceId: string, deleteSession: boolean) => {
     const proc = ptys.get(id)
     if (proc) {
+      logAgentDebug('pty-main', 'terminal-kill', { nodeId: id, workspaceId, deleteSession })
+      const wc = getWebContents()
+      if (wc && !wc.isDestroyed()) wc.send('agent:status', { nodeId: id, status: 'idle' })
+      const idleTimer = idleTimers.get(id)
+      if (idleTimer) {
+        clearTimeout(idleTimer)
+        idleTimers.delete(id)
+      }
       try { proc.kill() } catch {}
       ptys.delete(id)
     }
@@ -95,6 +168,8 @@ export function killAllPtys(): void {
     try { proc.kill() } catch {}
   }
   ptys.clear()
+  for (const idleTimer of idleTimers.values()) clearTimeout(idleTimer)
+  idleTimers.clear()
 }
 
 export async function cleanupOrphanSessions(validNodeIds: string[]): Promise<void> {

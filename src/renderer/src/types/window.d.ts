@@ -6,6 +6,29 @@ interface BrowserSessionRow {
   createdAt: number
 }
 
+type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'executing'
+  | 'modifying_files'
+  | 'done'
+  | 'error'
+  | 'needs_permission'
+  | 'needs_input'
+
+interface AgentSignal {
+  nodeId: string
+  status: AgentStatus
+  message?: string
+}
+
+interface NodeMetadataRow {
+  nodeId: string
+  lastFocusedAt: number
+  focusCount: number
+  tags: string // JSON array string
+}
+
 interface WorkspaceRow {
   id: string
   name: string
@@ -73,6 +96,12 @@ declare global {
     appState: {
       get: (key: string) => Promise<string | null>
       set: (key: string, value: string) => Promise<void>
+    }
+
+    agent: {
+      getMetadata: (nodeIds: string[]) => Promise<NodeMetadataRow[]>
+      saveMetadata: (nodeId: string, patch: Partial<Omit<NodeMetadataRow, 'nodeId'>>) => Promise<void>
+      onStatus: (cb: (signal: AgentSignal) => void) => () => void
     }
 
     app: {

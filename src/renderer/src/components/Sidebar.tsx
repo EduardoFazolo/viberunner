@@ -7,6 +7,7 @@ import { useSessionStore, BrowserSession } from '../stores/sessionStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { loadWorkspaceCanvas } from '../hooks/useWorkspaceInit'
 import { getCanvasRect } from '../utils/canvasUtils'
+import { getSidebarAgentStatusUi } from '../utils/sidebarAgentStatus'
 
 function jumpToNode(node: NodeData): void {
   const zoom = Math.max(useCameraStore.getState().camera.zoom, 0.7)
@@ -361,8 +362,12 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
 }): React.ReactElement {
   const [hovered, setHovered] = useState(false)
   const { remove, focusedNodeId } = useNodeStore()
+  const liveNode = useNodeStore((s) => s.workspaceNodes.get(workspaceId)?.get(node.id) ?? s.nodes.get(node.id))
+  const agentStatus = liveNode?.agentStatus
   const { nodeSummaries, setNodeSummaries } = useWorkspaceStore()
   const isFocused = workspaceActive && focusedNodeId === node.id
+  const displayTitle = liveNode?.title ?? node.title
+  const { isAgentActive, needsUserInput, isDone, isThinking } = getSidebarAgentStatusUi(agentStatus)
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -377,14 +382,20 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
       await loadWorkspaceCanvas(workspaceId)
     }
     const liveNode = useNodeStore.getState().nodes.get(node.id)
-    if (liveNode) jumpToNode(liveNode)
+    if (liveNode) {
+      jumpToNode(liveNode)
+      if (liveNode.agentStatus === 'done') {
+        useNodeStore.getState().setAgentStatus(node.id, 'idle')
+      }
+    }
   }
 
   return (
     <div
+      className={isAgentActive ? 'agent-active' : needsUserInput ? 'agent-needs-input' : isDone ? 'agent-done' : undefined}
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        minHeight: 26, padding: node.subtitle ? '3px 4px 3px 28px' : '0 4px 0 28px',
+        minHeight: 26, padding: (node.subtitle || needsUserInput || isThinking) ? '3px 4px 3px 28px' : '0 4px 0 28px',
         cursor: 'pointer',
         background: hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
         borderRadius: 5,
@@ -403,14 +414,41 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
       )}
       <NodeTypeIcon type={node.type} />
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <span style={{
-          fontSize: 11.5,
-          color: hovered ? 'rgba(255,255,255,0.65)' : isFocused ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.38)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {node.title}
-        </span>
-        {node.subtitle && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+          {needsUserInput && (
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M5 1L9 8.5H1L5 1Z" fill="rgba(234,179,8,0.9)" stroke="none"/>
+              <path d="M5 4v2" stroke="#0d0d0d" strokeWidth="1.1" strokeLinecap="round"/>
+              <circle cx="5" cy="7.2" r="0.5" fill="#0d0d0d"/>
+            </svg>
+          )}
+          <span style={{
+            fontSize: 11.5,
+            color: needsUserInput ? 'rgba(234,179,8,0.9)' : hovered ? 'rgba(255,255,255,0.65)' : isFocused ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.38)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {displayTitle}
+          </span>
+        </div>
+        {needsUserInput && (
+          <span style={{
+            fontSize: 10, color: 'rgba(234,179,8,0.6)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            lineHeight: 1.2,
+          }}>
+            Awaiting user input
+          </span>
+        )}
+        {isThinking && (
+          <span style={{
+            fontSize: 10, color: 'rgba(167,139,250,0.5)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            lineHeight: 1.2,
+          }}>
+            thinking…
+          </span>
+        )}
+        {node.subtitle && !needsUserInput && !isThinking && (
           <span style={{
             fontSize: 10, color: 'rgba(255,255,255,0.2)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

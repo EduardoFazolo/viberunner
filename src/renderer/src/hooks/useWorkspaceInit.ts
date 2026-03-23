@@ -149,6 +149,26 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
         const node = rowToNode(row)
         nodes.set(node.id, node)
       }
+
+      // Merge persisted metadata (focusCount, lastFocusedAt, tags) into nodes
+      try {
+        const nodeIds = [...nodes.keys()]
+        if (nodeIds.length > 0) {
+          const metaRows = await window.agent.getMetadata(nodeIds)
+          for (const meta of metaRows) {
+            const node = nodes.get(meta.nodeId)
+            if (node) {
+              nodes.set(meta.nodeId, {
+                ...node,
+                lastFocusedAt: meta.lastFocusedAt,
+                focusCount: meta.focusCount,
+                tags: (() => { try { return JSON.parse(meta.tags) } catch { return [] } })(),
+              })
+            }
+          }
+        }
+      } catch {}
+
       useNodeStore.getState().loadWorkspace(workspaceId, nodes)
       activateNodesAfterMount([...nodes.keys()])
 

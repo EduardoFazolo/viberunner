@@ -1,5 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'executing'
+  | 'modifying_files'
+  | 'done'
+  | 'error'
+  | 'needs_permission'
+  | 'needs_input'
+interface AgentSignal { nodeId: string; status: AgentStatus; message?: string }
+interface NodeMetadataRow { nodeId: string; lastFocusedAt: number; focusCount: number; tags: string }
+
 contextBridge.exposeInMainWorld('terminal', {
   create: (id: string, workspaceId: string, cwd: string, shell: string) =>
     ipcRenderer.invoke('terminal:create', id, workspaceId, cwd, shell),
@@ -133,6 +145,20 @@ contextBridge.exposeInMainWorld('fs', {
 
   delete: (filePath: string): Promise<void> =>
     ipcRenderer.invoke('fs:delete', filePath),
+})
+
+contextBridge.exposeInMainWorld('agent', {
+  getMetadata: (nodeIds: string[]): Promise<NodeMetadataRow[]> =>
+    ipcRenderer.invoke('agent:getMetadata', nodeIds),
+
+  saveMetadata: (nodeId: string, patch: Partial<Omit<NodeMetadataRow, 'nodeId'>>): Promise<void> =>
+    ipcRenderer.invoke('agent:saveMetadata', nodeId, patch),
+
+  onStatus: (cb: (signal: AgentSignal) => void): (() => void) => {
+    const listener = (_: unknown, signal: AgentSignal) => cb(signal)
+    ipcRenderer.on('agent:status', listener)
+    return () => ipcRenderer.removeListener('agent:status', listener)
+  },
 })
 
 contextBridge.exposeInMainWorld('app', {

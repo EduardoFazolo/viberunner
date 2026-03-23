@@ -11,7 +11,12 @@ const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
 }
 
 beforeEach(() => {
-  useNodeStore.setState({ nodes: new Map(), focusedNodeId: null })
+  useNodeStore.setState({
+    nodes: new Map(),
+    workspaceNodes: new Map(),
+    activeWorkspaceId: '',
+    focusedNodeId: null,
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -204,5 +209,53 @@ describe('nodeStore.setFocusedNodeId', () => {
     expect(useNodeStore.getState().focusedNodeId).toBe(node.id)
     useNodeStore.getState().setFocusedNodeId(null)
     expect(useNodeStore.getState().focusedNodeId).toBeNull()
+  })
+})
+
+describe('nodeStore.setAgentStatus', () => {
+  it('updates a node in an inactive workspace without switching the active workspace', () => {
+    const inactiveNode = {
+      id: 'node-inactive',
+      type: 'claude' as const,
+      x: 0,
+      y: 0,
+      width: 700,
+      height: 480,
+      zIndex: 1,
+      title: 'Claude',
+      minimized: false,
+      contentScale: 1,
+      props: {},
+    }
+    const activeNode = {
+      id: 'node-active',
+      type: 'claude' as const,
+      x: 10,
+      y: 10,
+      width: 700,
+      height: 480,
+      zIndex: 2,
+      title: 'Claude Active',
+      minimized: false,
+      contentScale: 1,
+      props: {},
+    }
+
+    useNodeStore.setState({
+      activeWorkspaceId: 'ws-active',
+      nodes: new Map([[activeNode.id, activeNode]]),
+      workspaceNodes: new Map([
+        ['ws-active', new Map([[activeNode.id, activeNode]])],
+        ['ws-inactive', new Map([[inactiveNode.id, inactiveNode]])],
+      ]),
+    })
+
+    useNodeStore.getState().setAgentStatus(inactiveNode.id, 'needs_input')
+
+    expect(useNodeStore.getState().activeWorkspaceId).toBe('ws-active')
+    expect(useNodeStore.getState().nodes.get(activeNode.id)?.agentStatus).toBeUndefined()
+    expect(
+      useNodeStore.getState().workspaceNodes.get('ws-inactive')?.get(inactiveNode.id)?.agentStatus
+    ).toBe('needs_input')
   })
 })
