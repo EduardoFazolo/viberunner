@@ -48,6 +48,7 @@ export function OrchestratorMount(): React.ReactElement | null {
           ...node.props,
           status: event.status,
           message: event.message,
+          ...(event.streamText !== undefined ? { streamText: event.streamText } : {}),
         },
       })
     })
