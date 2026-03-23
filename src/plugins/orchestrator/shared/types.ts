@@ -4,7 +4,6 @@ export interface OrchestratorStartPayload {
   worldX: number
   worldY: number
   workspacePath?: string
-  apiKey: string
 }
 
 export interface SubagentSpawnedEvent {

@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { spawn } from 'child_process'
 import type { WebContents } from 'electron'
 import type {
   OrchestratorStartPayload,
@@ -10,82 +10,34 @@ const ORCHESTRATOR_W = 520
 const SUBAGENT_H = 180
 const SUBAGENT_GAP = 50
 
-const SYSTEM_PROMPT = `You are an AI task orchestrator embedded in a spatial canvas application called CanvaFlow.
+const PROMPT = (task: string, markdown: string) => `
+You are a task orchestrator. Break down the following task into 2-5 focused, parallel sub-tasks for specialized agents.
 
-Your job is to analyze the given task and break it down into 2-6 focused, parallel sub-tasks that can be delegated to specialized sub-agents.
+Task: ${task}
+${markdown ? `\nDetails:\n${markdown}` : ''}
 
-For each sub-task, call spawn_subagent with:
-- A short title (max 30 chars), e.g. "API Routes", "Database Schema", "Unit Tests"
-- A 1-3 sentence task description explaining exactly what the sub-agent should do
-
-After spawning all agents, call complete with a one-sentence summary.
+Respond ONLY with a valid JSON array (no markdown fences, no explanation):
+[{"title": "Short Title", "task": "1-3 sentence description of what this agent should work on"}, ...]
 
 Rules:
-- Prefer 2-4 focused agents over many small ones
+- Keep titles under 30 characters
 - Make sub-tasks as independent as possible
-- Be concrete about what each agent should produce`
+- Be concrete and actionable
+`.trim()
 
-const TOOLS: Anthropic.Tool[] = [
-  {
-    name: 'spawn_subagent',
-    description: 'Spawn a sub-agent node on the canvas for a specific sub-task.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: {
-          type: 'string',
-          description: 'Short agent title (max 30 chars), e.g. "API Routes"',
-        },
-        task: {
-          type: 'string',
-          description: 'Detailed task description (1-3 sentences)',
-        },
-      },
-      required: ['title', 'task'],
-    },
-  },
-  {
-    name: 'complete',
-    description: 'Mark orchestration complete after all agents have been spawned.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        summary: {
-          type: 'string',
-          description: 'One sentence summary of the decomposition',
-        },
-      },
-      required: ['summary'],
-    },
-  },
-]
+interface SubagentDef {
+  title: string
+  task: string
+}
 
-// Active runs — keyed by orchestratorId, value is an AbortController
-const activeRuns = new Map<string, AbortController>()
+// Active runs — keyed by orchestratorId
+const activeRuns = new Map<string, ReturnType<typeof spawn>>()
 
 export function runOrchestrator(
   payload: OrchestratorStartPayload,
   orchestratorId: string,
   webContents: WebContents,
 ): void {
-  const controller = new AbortController()
-  activeRuns.set(orchestratorId, controller)
-  void _run(payload, orchestratorId, webContents, controller.signal).finally(() => {
-    activeRuns.delete(orchestratorId)
-  })
-}
-
-export function cancelOrchestrator(orchestratorId: string): void {
-  activeRuns.get(orchestratorId)?.abort()
-  activeRuns.delete(orchestratorId)
-}
-
-async function _run(
-  payload: OrchestratorStartPayload,
-  orchestratorId: string,
-  webContents: WebContents,
-  signal: AbortSignal,
-): Promise<void> {
   const send = <T>(channel: string, data: T): void => {
     if (!webContents.isDestroyed()) webContents.send(channel, data)
   }
@@ -94,87 +46,93 @@ async function _run(
     send<OrchestratorStatusEvent>('orchestrator:status', { orchestratorId, status, message })
   }
 
-  let agentIndex = 0
-  let finished = false
+  sendStatus('thinking', 'Analyzing task…')
 
-  try {
-    const client = new Anthropic({ apiKey: payload.apiKey })
+  const prompt = PROMPT(payload.task, payload.markdown)
 
-    const userContent = [
-      `**Task:** ${payload.task}`,
-      payload.markdown ? `\n**Details:**\n${payload.markdown}` : '',
-    ].join('')
+  // Pass the prompt via stdin — avoids shell mangling of multi-line text
+  const proc = spawn('claude', ['-p', '--output-format', 'json'], {
+    shell: true,
+    env: { ...process.env },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
 
-    const messages: Anthropic.MessageParam[] = [
-      { role: 'user', content: userContent.trim() },
-    ]
+  proc.stdin.write(prompt)
+  proc.stdin.end()
 
-    sendStatus('thinking', 'Analyzing task…')
+  activeRuns.set(orchestratorId, proc)
 
-    // Agentic loop — typically resolves in 1 turn
-    while (!finished) {
-      if (signal.aborted) return
+  let stdout = ''
+  let stderr = ''
 
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages,
-        tools: TOOLS,
-      })
+  proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+  proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
 
-      const toolResults: Anthropic.ToolResultBlockParam[] = []
+  proc.on('close', (code) => {
+    activeRuns.delete(orchestratorId)
 
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue
-
-        if (block.name === 'spawn_subagent') {
-          const input = block.input as { title: string; task: string }
-          const idx = agentIndex++
-          const subagentX = payload.worldX + ORCHESTRATOR_W + 80
-          const subagentY = payload.worldY + idx * (SUBAGENT_H + SUBAGENT_GAP)
-
-          send<SubagentSpawnedEvent>('orchestrator:node-created', {
-            orchestratorId,
-            agentId: `subagent-${orchestratorId}-${idx}`,
-            title: input.title.slice(0, 40),
-            task: input.task,
-            worldX: subagentX,
-            worldY: subagentY,
-          })
-
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: 'Spawned successfully.',
-          })
-        } else if (block.name === 'complete') {
-          const input = block.input as { summary: string }
-          finished = true
-          sendStatus('done', input.summary)
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: 'Done.',
-          })
-        }
-      }
-
-      if (response.stop_reason === 'end_turn') {
-        if (!finished) sendStatus('done', `Spawned ${agentIndex} agent${agentIndex !== 1 ? 's' : ''}.`)
-        break
-      }
-
-      if (toolResults.length > 0 && !finished) {
-        messages.push({ role: 'assistant', content: response.content })
-        messages.push({ role: 'user', content: toolResults })
-      } else {
-        break
-      }
+    if (code !== 0) {
+      const errMsg = stderr.trim() || `claude exited with code ${code}`
+      sendStatus('error', errMsg)
+      return
     }
-  } catch (err) {
-    if (signal.aborted) return
-    const msg = err instanceof Error ? err.message : String(err)
-    sendStatus('error', msg)
+
+    // The CLI outputs a JSON envelope: { result: "..." }
+    let text = stdout.trim()
+    try {
+      const envelope = JSON.parse(text) as { result?: string; is_error?: boolean }
+      if (envelope.is_error) {
+        sendStatus('error', envelope.result ?? 'Unknown error')
+        return
+      }
+      if (envelope.result) text = envelope.result
+    } catch {
+      // not an envelope, use raw text
+    }
+
+    // Extract JSON array from the text (Claude might wrap it anyway)
+    const match = text.match(/\[[\s\S]*\]/)
+    if (!match) {
+      sendStatus('error', 'Could not parse agent list from response')
+      return
+    }
+
+    let agents: SubagentDef[]
+    try {
+      agents = JSON.parse(match[0]) as SubagentDef[]
+    } catch {
+      sendStatus('error', 'Invalid JSON in response')
+      return
+    }
+
+    // Spawn subagent nodes
+    agents.forEach((agent, idx) => {
+      const subagentX = payload.worldX + ORCHESTRATOR_W + 80
+      const subagentY = payload.worldY + idx * (SUBAGENT_H + SUBAGENT_GAP)
+
+      send<SubagentSpawnedEvent>('orchestrator:node-created', {
+        orchestratorId,
+        agentId: `subagent-${orchestratorId}-${idx}`,
+        title: (agent.title ?? `Agent ${idx + 1}`).slice(0, 40),
+        task: agent.task ?? '',
+        worldX: subagentX,
+        worldY: subagentY,
+      })
+    })
+
+    sendStatus('done', `Spawned ${agents.length} agent${agents.length !== 1 ? 's' : ''}`)
+  })
+
+  proc.on('error', (err) => {
+    activeRuns.delete(orchestratorId)
+    sendStatus('error', `Failed to run claude: ${err.message}`)
+  })
+}
+
+export function cancelOrchestrator(orchestratorId: string): void {
+  const proc = activeRuns.get(orchestratorId)
+  if (proc) {
+    proc.kill()
+    activeRuns.delete(orchestratorId)
   }
 }

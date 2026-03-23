@@ -122,8 +122,6 @@ export function NotionDropModal({ payload, onClose }: Props): React.ReactElement
         const wx = (clientX - canvasRect.left - camera.x) / camera.zoom
         const wy = (clientY - canvasRect.top - camera.y) / camera.zoom
 
-        const apiKey = (await window.appState.get('orchestrator-api-key')) ?? ''
-
         let markdown = ''
         const prepared = getPreparedNotionExternalDrag(partition, pageId)
         if (prepared) {
@@ -140,7 +138,6 @@ export function NotionDropModal({ payload, onClose }: Props): React.ReactElement
           task: title,
           status: 'idle',
           subagentIds: [],
-          apiKey,
         })
 
         await window.orchestrator.start(node.id, {
@@ -149,7 +146,6 @@ export function NotionDropModal({ payload, onClose }: Props): React.ReactElement
           worldX: wx,
           worldY: wy,
           workspacePath: workspace?.path,
-          apiKey,
         })
 
         onClose()
