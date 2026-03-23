@@ -14,6 +14,50 @@ interface Props {
   node: NodeData
 }
 
+/**
+ * Build a coordination preamble for the agent's task.
+ * This tells Claude it's part of a cluster and to avoid stepping on other agents' files.
+ */
+function buildClusterPreamble(
+  myTask: string,
+  myTitle: string,
+  orchestratorNode: NodeData | undefined,
+): string {
+  if (!orchestratorNode) return myTask
+
+  const mainTask = (orchestratorNode.props.task as string) ?? ''
+  const subagentIds = (orchestratorNode.props.subagentIds as string[] | undefined) ?? []
+  const store = useNodeStore.getState()
+
+  const siblingTasks: string[] = []
+  for (const id of subagentIds) {
+    const node = store.nodes.get(id)
+    if (!node) continue
+    const nodeTask = (node.props?.task as string) ?? ''
+    const nodeTitle = node.title ?? ''
+    // Include all siblings (including self) for full picture
+    siblingTasks.push(`- "${nodeTitle}": ${nodeTask}`)
+  }
+
+  const preamble = [
+    `IMPORTANT — You are part of a multi-agent cluster working on: "${mainTask}"`,
+    ``,
+    `Your specific task: ${myTask}`,
+    ``,
+    `Other agents are working IN PARALLEL on these tasks:`,
+    ...siblingTasks,
+    ``,
+    `COORDINATION RULES:`,
+    `1. ONLY modify files directly related to YOUR task. Do not touch files that other agents are likely editing.`,
+    `2. If you need to modify a shared file (like a router, index, or config), make MINIMAL changes — add only what you need, do not reorganize or refactor.`,
+    `3. Before editing any file, consider whether another agent might also be editing it. If yes, keep your changes as small and isolated as possible.`,
+    `4. Prefer ADDING new files over modifying existing shared ones when possible.`,
+    `5. When done, provide a brief summary of which files you created or modified.`,
+  ].join('\n')
+
+  return preamble
+}
+
 export function SubagentNode({ node }: Props): React.ReactElement {
   const { add, remove, update } = useNodeStore()
   const props = node.props as Partial<SubagentProps>
@@ -41,36 +85,44 @@ export function SubagentNode({ node }: Props): React.ReactElement {
           },
         })
       }
+
+      // Register this Claude node in the signal server's cluster tracking
+      window.orchestrator.registerNode(newNode.id, orchestratorId)
     }
 
-    // Copy the orchestratorId to the new Claude node so ClusterLayer can track it
+    // Copy the orchestratorId + task to the new Claude node
     update(newNode.id, {
       props: {
         ...newNode.props,
         orchestratorId,
+        task,
         cwd: props.workspacePath ?? '',
       },
     })
+
+    // Build the full prompt with coordination preamble
+    const orchNode = orchestratorId
+      ? useNodeStore.getState().nodes.get(orchestratorId)
+      : undefined
+    const fullPrompt = buildClusterPreamble(task, node.title, orchNode)
 
     // Remove the subagent note node
     remove(node.id)
 
     // Wait for the terminal to be ready by listening for output, then send the task
-    const unsub = window.terminal.onData(newNode.id, (data) => {
-      // Claude CLI shows a prompt or welcome text once ready
-      // Any data from the terminal means it's alive — send the task
+    const unsub = window.terminal.onData(newNode.id, () => {
       unsub()
       setTimeout(() => {
-        window.terminal.write(newNode.id, task + '\n')
+        window.terminal.write(newNode.id, fullPrompt + '\n')
       }, 300)
     })
 
     // Safety fallback — if we never get data, write after 5s anyway
     setTimeout(() => {
       unsub()
-      window.terminal.write(newNode.id, task + '\n')
+      window.terminal.write(newNode.id, fullPrompt + '\n')
     }, 5000)
-  }, [node.id, node.x, node.y, task, orchestratorId, props.workspacePath, add, remove, update])
+  }, [node.id, node.x, node.y, node.title, task, orchestratorId, props.workspacePath, add, remove, update])
 
   return (
     <BaseNode node={node}>

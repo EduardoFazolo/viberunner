@@ -3,12 +3,21 @@ import { BaseNode } from '../../../renderer/src/components/BaseNode'
 import type { NodeData } from '../../../renderer/src/stores/nodeStore'
 import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
 
+interface FileChangeEntry {
+  nodeId: string
+  agentName: string
+  filePath: string
+  toolName: string
+  timestamp: number
+}
+
 interface OrchestratorProps {
   task: string
   status: 'idle' | 'thinking' | 'streaming' | 'parsing' | 'spawning' | 'done' | 'error'
   message?: string
   streamText?: string
   subagentIds: string[]
+  fileChanges?: FileChangeEntry[]
 }
 
 interface Props {
@@ -45,8 +54,10 @@ export function OrchestratorNode({ node }: Props): React.ReactElement {
   const message = props.message ?? STATUS_LABELS[status]
   const streamText = props.streamText ?? ''
   const subagentIds = props.subagentIds ?? []
+  const fileChanges = props.fileChanges ?? []
   const statusColor = STATUS_COLORS[status]
   const streamRef = useRef<HTMLDivElement>(null)
+  const changesRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll the stream view
   useEffect(() => {
@@ -54,6 +65,13 @@ export function OrchestratorNode({ node }: Props): React.ReactElement {
       streamRef.current.scrollTop = streamRef.current.scrollHeight
     }
   }, [streamText])
+
+  // Auto-scroll the changes log
+  useEffect(() => {
+    if (changesRef.current) {
+      changesRef.current.scrollTop = changesRef.current.scrollHeight
+    }
+  }, [fileChanges.length])
 
   const titleExtra = (
     <div style={{
@@ -171,6 +189,59 @@ export function OrchestratorNode({ node }: Props): React.ReactElement {
               {subagentIds.map((id) => (
                 <SubagentRef key={id} nodeId={id} />
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* File change activity log */}
+        {fileChanges.length > 0 && (
+          <div>
+            <div style={{
+              fontSize: 10, color: 'rgba(255,255,255,0.3)', fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6,
+            }}>
+              File Changes ({fileChanges.length})
+            </div>
+            <div
+              ref={changesRef}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 2,
+                maxHeight: 140, overflow: 'auto',
+              }}
+            >
+              {fileChanges.map((change, i) => {
+                const shortPath = change.filePath.split('/').slice(-2).join('/')
+                return (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '3px 8px',
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    color: 'rgba(255,255,255,0.5)',
+                  }}>
+                    <span style={{
+                      color: change.toolName === 'Write' ? 'rgba(74,222,128,0.7)' : 'rgba(251,191,36,0.7)',
+                      fontSize: 10, fontWeight: 600, flexShrink: 0, width: 12,
+                    }}>
+                      {change.toolName === 'Write' ? '+' : '~'}
+                    </span>
+                    <span style={{
+                      color: 'rgba(167,139,250,0.6)',
+                      flexShrink: 0,
+                      fontSize: 10,
+                    }}>
+                      {change.agentName}
+                    </span>
+                    <span style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {shortPath}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

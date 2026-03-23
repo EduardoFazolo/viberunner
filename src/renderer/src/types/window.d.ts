@@ -1,4 +1,4 @@
-import type { AgentSignal } from '../../../modules/servers/agentic_signals/shared/types'
+import type { AgentSignal, AgentFileChange } from '../../../modules/servers/agentic_signals/shared/types'
 import type {
   OrchestratorStartPayload,
   SubagentSpawnedEvent,
@@ -94,6 +94,7 @@ declare global {
       getMetadata: (nodeIds: string[]) => Promise<NodeMetadataRow[]>
       saveMetadata: (nodeId: string, patch: Partial<Omit<NodeMetadataRow, 'nodeId'>>) => Promise<void>
       onStatus: (cb: (signal: AgentSignal) => void) => () => void
+      onFileChange: (cb: (event: AgentFileChange & { orchestratorId: string }) => void) => () => void
     }
 
     app: {
@@ -107,6 +108,7 @@ declare global {
     orchestrator: {
       start: (orchestratorId: string, payload: OrchestratorStartPayload) => Promise<{ ok: boolean }>
       cancel: (orchestratorId: string) => Promise<void>
+      registerNode: (nodeId: string, orchestratorId: string) => Promise<void>
       onNodeCreated: (cb: (event: SubagentSpawnedEvent) => void) => () => void
       onStatus: (cb: (event: OrchestratorStatusEvent) => void) => () => void
       onNoteUpdate: (cb: (event: NoteUpdateEvent) => void) => () => void

@@ -1,5 +1,6 @@
 import type { IpcMain, WebContents } from 'electron'
 import { runOrchestrator, cancelOrchestrator } from './runner'
+import { registerNodeToCluster } from '../../../modules/servers/agentic_signals/main/server'
 import type { OrchestratorStartPayload } from '../shared/types'
 
 let _getWebContents: (() => WebContents | null) | null = null
@@ -22,5 +23,10 @@ export function registerOrchestratorHandlers(
 
   ipcMain.handle('orchestrator:cancel', (_event, orchestratorId: string) => {
     cancelOrchestrator(orchestratorId)
+  })
+
+  // Register an agent node to a cluster so the signal server can track file changes
+  ipcMain.handle('orchestrator:register-node', (_event, nodeId: string, orchestratorId: string) => {
+    registerNodeToCluster(nodeId, orchestratorId)
   })
 }

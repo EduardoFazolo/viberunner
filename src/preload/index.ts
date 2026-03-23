@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AgentSignal } from '../modules/servers/agentic_signals/shared/types'
+import type { AgentSignal, AgentFileChange } from '../modules/servers/agentic_signals/shared/types'
 import type {
   OrchestratorStartPayload,
   SubagentSpawnedEvent,
@@ -156,6 +156,12 @@ contextBridge.exposeInMainWorld('agent', {
     ipcRenderer.on('agent:status', listener)
     return () => ipcRenderer.removeListener('agent:status', listener)
   },
+
+  onFileChange: (cb: (event: AgentFileChange & { orchestratorId: string }) => void): (() => void) => {
+    const listener = (_: unknown, event: AgentFileChange & { orchestratorId: string }) => cb(event)
+    ipcRenderer.on('agent:file-change', listener)
+    return () => ipcRenderer.removeListener('agent:file-change', listener)
+  },
 })
 
 contextBridge.exposeInMainWorld('app', {
@@ -254,6 +260,9 @@ contextBridge.exposeInMainWorld('orchestrator', {
 
   cancel: (orchestratorId: string): Promise<void> =>
     ipcRenderer.invoke('orchestrator:cancel', orchestratorId),
+
+  registerNode: (nodeId: string, orchestratorId: string): Promise<void> =>
+    ipcRenderer.invoke('orchestrator:register-node', nodeId, orchestratorId),
 
   onNodeCreated: (cb: (event: SubagentSpawnedEvent) => void): (() => void) => {
     const listener = (_: unknown, event: SubagentSpawnedEvent) => cb(event)
