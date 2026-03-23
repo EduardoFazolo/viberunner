@@ -71,7 +71,7 @@ export function SubagentNode({ node }: Props): React.ReactElement {
     // Launch with bypassPermissions so orchestrated agents run autonomously
     const newNode = add('claude', node.x, node.y, {
       cwd: props.workspacePath ?? '',
-      claudeFlags: '--permission-mode bypassPermissions',
+      claudeFlags: '--dangerously-skip-permissions',
     })
 
     // If we belong to an orchestrator, swap our ID in its subagentIds list
