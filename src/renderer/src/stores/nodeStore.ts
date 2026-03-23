@@ -65,7 +65,7 @@ const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
   trello: { width: 900, height: 700 },
   claude: { width: 700, height: 480 },
   monaco: { width: 1000, height: 640 },
-  orchestrator: { width: 520, height: 300 },
+  orchestrator: { width: 520, height: 500 },
   subagent: { width: 460, height: 180 },
 }
 

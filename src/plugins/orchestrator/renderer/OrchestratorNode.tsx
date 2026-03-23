@@ -125,8 +125,8 @@ export function OrchestratorNode({ node }: Props): React.ReactElement {
           </span>
         </div>
 
-        {/* Stream output — live view of what Claude is responding */}
-        {streamText && (
+        {/* Stream output — only visible while actively streaming, hidden once done */}
+        {streamText && isActive(status) && (
           <div>
             <div style={{
               fontSize: 10, color: 'rgba(255,255,255,0.3)', fontWeight: 600,
