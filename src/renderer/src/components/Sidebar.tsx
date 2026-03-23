@@ -7,6 +7,7 @@ import { useSessionStore, BrowserSession } from '../stores/sessionStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { loadWorkspaceCanvas } from '../hooks/useWorkspaceInit'
 import { getCanvasRect } from '../utils/canvasUtils'
+import { getSidebarAgentStatusUi } from '../utils/sidebarAgentStatus'
 
 function jumpToNode(node: NodeData): void {
   const zoom = Math.max(useCameraStore.getState().camera.zoom, 0.7)
@@ -361,22 +362,12 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
 }): React.ReactElement {
   const [hovered, setHovered] = useState(false)
   const { remove, focusedNodeId } = useNodeStore()
-  const liveNode = useNodeStore((s) => s.nodes.get(node.id))
+  const liveNode = useNodeStore((s) => s.workspaceNodes.get(workspaceId)?.get(node.id) ?? s.nodes.get(node.id))
   const agentStatus = liveNode?.agentStatus
   const { nodeSummaries, setNodeSummaries } = useWorkspaceStore()
   const isFocused = workspaceActive && focusedNodeId === node.id
   const displayTitle = liveNode?.title ?? node.title
-  const isAgentActive =
-    workspaceActive &&
-    agentStatus &&
-    agentStatus !== 'idle' &&
-    agentStatus !== 'done' &&
-    agentStatus !== 'needs_permission' &&
-    agentStatus !== 'needs_input'
-  const needsPermission = workspaceActive && agentStatus === 'needs_permission'
-  const needsInput = workspaceActive && agentStatus === 'needs_input'
-  const needsUserInput = needsPermission || needsInput
-  const isDone = workspaceActive && agentStatus === 'done'
+  const { isAgentActive, needsUserInput, isDone, isThinking } = getSidebarAgentStatusUi(agentStatus)
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -404,7 +395,7 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
       className={isAgentActive ? 'agent-active' : needsUserInput ? 'agent-needs-input' : isDone ? 'agent-done' : undefined}
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        minHeight: 26, padding: (node.subtitle || needsUserInput || agentStatus === 'thinking') ? '3px 4px 3px 28px' : '0 4px 0 28px',
+        minHeight: 26, padding: (node.subtitle || needsUserInput || isThinking) ? '3px 4px 3px 28px' : '0 4px 0 28px',
         cursor: 'pointer',
         background: hovered ? 'rgba(255,255,255,0.04)' : 'transparent',
         borderRadius: 5,
@@ -448,7 +439,7 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
             Awaiting user input
           </span>
         )}
-        {agentStatus === 'thinking' && workspaceActive && (
+        {isThinking && (
           <span style={{
             fontSize: 10, color: 'rgba(167,139,250,0.5)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -457,7 +448,7 @@ function NodeItem({ node, workspaceActive, onSwitchWorkspace, workspaceId }: {
             thinking…
           </span>
         )}
-        {node.subtitle && !needsUserInput && agentStatus !== 'thinking' && (
+        {node.subtitle && !needsUserInput && !isThinking && (
           <span style={{
             fontSize: 10, color: 'rgba(255,255,255,0.2)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

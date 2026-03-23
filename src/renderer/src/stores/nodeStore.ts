@@ -114,17 +114,43 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
 
   setAgentStatus: (id, status) => {
     set((s) => {
-      const node = s.nodes.get(id)
-      if (!node) return s
+      let targetWorkspaceId: string | null = null
+      let node = s.nodes.get(id)
+
+      if (node) {
+        targetWorkspaceId = s.activeWorkspaceId
+      } else {
+        for (const [workspaceId, workspaceNodes] of s.workspaceNodes.entries()) {
+          const candidate = workspaceNodes.get(id)
+          if (candidate) {
+            targetWorkspaceId = workspaceId
+            node = candidate
+            break
+          }
+        }
+      }
+
+      if (!node || !targetWorkspaceId) return s
       logAgentDebug('node-store', 'set-agent-status', {
         nodeId: id,
         from: node.agentStatus ?? '',
         to: status,
+        workspaceId: targetWorkspaceId,
         persistedToDb: false,
       })
-      const nodes = new Map(s.nodes)
-      nodes.set(id, { ...node, agentStatus: status })
-      return syncBack(nodes, s)
+      const updatedNode = { ...node, agentStatus: status }
+      const workspaceNodes = new Map(s.workspaceNodes)
+      const targetNodes = new Map(workspaceNodes.get(targetWorkspaceId) ?? [])
+      targetNodes.set(id, updatedNode)
+      workspaceNodes.set(targetWorkspaceId, targetNodes)
+
+      if (targetWorkspaceId === s.activeWorkspaceId) {
+        const nodes = new Map(s.nodes)
+        nodes.set(id, updatedNode)
+        return { nodes, workspaceNodes }
+      }
+
+      return { workspaceNodes }
     })
   },
 
