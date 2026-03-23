@@ -13,11 +13,12 @@ interface Props {
  * The cwd is set at creation time (workspace path) and persisted normally.
  */
 export function ClaudeNode({ node }: Props): React.ReactElement {
+  const claudeFlags = (node.props.claudeFlags as string) ?? ''
   const claudeNode: NodeData = {
     ...node,
     props: {
       ...node.props,
-      shell: 'claude',
+      shell: claudeFlags ? `claude ${claudeFlags}` : 'claude',
     },
   }
   return <TerminalNode node={claudeNode} />

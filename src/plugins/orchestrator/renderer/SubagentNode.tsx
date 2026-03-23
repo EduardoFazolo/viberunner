@@ -2,6 +2,7 @@ import React, { useCallback } from 'react'
 import { BaseNode } from '../../../renderer/src/components/BaseNode'
 import type { NodeData } from '../../../renderer/src/stores/nodeStore'
 import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
+import { useActivationStore } from '../../../renderer/src/stores/activationStore'
 
 interface SubagentProps {
   task: string
@@ -67,8 +68,10 @@ export function SubagentNode({ node }: Props): React.ReactElement {
 
   const handleLaunchClaude = useCallback(() => {
     // Create a Claude node at the same position as this subagent
+    // Launch with bypassPermissions so orchestrated agents run autonomously
     const newNode = add('claude', node.x, node.y, {
       cwd: props.workspacePath ?? '',
+      claudeFlags: '--permission-mode bypassPermissions',
     })
 
     // If we belong to an orchestrator, swap our ID in its subagentIds list
@@ -106,21 +109,35 @@ export function SubagentNode({ node }: Props): React.ReactElement {
       : undefined
     const fullPrompt = buildClusterPreamble(task, node.title, orchNode)
 
+    // Activate the terminal immediately so it starts without needing a click
+    useActivationStore.getState().activate(newNode.id)
+
     // Remove the subagent note node
     remove(node.id)
 
-    // Wait for the terminal to be ready by listening for output, then send the task
+    // Wait for the terminal to be ready by listening for output, then send the task.
+    // Send the text and Enter separately to avoid bracketed paste mode swallowing the newline.
+    let sent = false
+    const sendTask = () => {
+      if (sent) return
+      sent = true
+      // Write the prompt text (will be bracketed-pasted by the terminal)
+      window.terminal.write(newNode.id, fullPrompt)
+      // Send Enter as a separate write after a brief gap — outside the paste bracket
+      setTimeout(() => {
+        window.terminal.write(newNode.id, '\r')
+      }, 100)
+    }
+
     const unsub = window.terminal.onData(newNode.id, () => {
       unsub()
-      setTimeout(() => {
-        window.terminal.write(newNode.id, fullPrompt + '\n')
-      }, 300)
+      setTimeout(sendTask, 300)
     })
 
-    // Safety fallback — if we never get data, write after 5s anyway
+    // Safety fallback
     setTimeout(() => {
       unsub()
-      window.terminal.write(newNode.id, fullPrompt + '\n')
+      sendTask()
     }, 5000)
   }, [node.id, node.x, node.y, node.title, task, orchestratorId, props.workspacePath, add, remove, update])
 
