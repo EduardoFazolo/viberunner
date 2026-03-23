@@ -27,6 +27,7 @@ declare global {
       mouseClick(button?: string): Promise<void>
       mouseToggle(down: boolean, button?: string): Promise<void>
       getMousePos(): Promise<{ x: number; y: number }>
+      keyToggle(key: string, down: boolean): Promise<void>
     }
   }
 }
@@ -230,7 +231,9 @@ export function useMaestro(): MaestroState {
   const currentNormRef     = useRef<{ x: number; y: number } | null>(null)
   const velocityRef        = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
   const cursorRafRef       = useRef<number | null>(null)
-  // ── Cmd+scroll zoom (left fist + right hand vertical movement) ──────
+  // ── Left fist = Cmd modifier ────────────────────────────────────────
+  const cmdActiveRef       = useRef(false)
+  // ── Cmd+scroll zoom (left fist + right open palm vertical movement) ──
   const prevZoomYRef       = useRef<number | null>(null)
   // ── Drag confidence (prevents noisy mid-drag drops) ───────────────────
   const dragConfidenceRef     = useRef(1)
@@ -393,24 +396,33 @@ export function useMaestro(): MaestroState {
       return
     }
 
-    // ── Cmd+scroll zoom: left fist + right hand vertical = zoom ──
-    // Left hand closed fist acts as "Cmd" modifier.
-    // Right hand vertical movement acts as scroll wheel → zoom.
-    if (detectedHands.length >= 2) {
-      const leftHand  = detectedHands.find((h) => h.handedness === 'Left')
-      const rightHand = detectedHands.find((h) => h.handedness === 'Right')
-      if (leftHand && rightHand && isFist(leftHand.landmarks)) {
+    // ── Left fist = "Cmd" modifier ──
+    // Left fist + right open palm moving up/down = Cmd+scroll = zoom
+    // Left fist + right pinch = Cmd+click / Cmd+drag (passes through to normal pinch with meta key)
+    const leftHand  = detectedHands.find((h) => h.handedness === 'Left')
+    const rightHand = detectedHands.find((h) => h.handedness === 'Right')
+    const leftFist  = !!(leftHand && isFist(leftHand.landmarks))
+    // Toggle Cmd key when fist state changes
+    if (leftFist !== cmdActiveRef.current) {
+      cmdActiveRef.current = leftFist
+      void window.maestro.keyToggle('command', leftFist)
+    }
+
+    if (leftFist && rightHand) {
+      if (isOpenPalm(rightHand.landmarks)) {
+        // Left fist + right open palm → zoom via vertical movement
         processZoom(rightHand)
         return
       }
+      // Left fist + right pinching → falls through to normal pinch with Cmd held
     }
+
     // Not zooming — clear zoom state
     prevZoomYRef.current = null
 
     // ── Pick the controlling hand (single-hand mode) ──
     // Prefer 'Right' but fall back to whatever hand is visible.
-    const controlHand = detectedHands.find((h) => h.handedness === 'Right')
-      ?? detectedHands[0]
+    const controlHand = rightHand ?? detectedHands[0]
 
     // No hand visible — clear target so the cursor loop uses velocity prediction.
     if (!controlHand) {
@@ -631,6 +643,7 @@ export function useMaestro(): MaestroState {
 
   function resetMouseState(): void {
     if (mousePhaseRef.current === 'dragging') void window.maestro?.mouseToggle(false, 'left')
+    if (cmdActiveRef.current) { void window.maestro?.keyToggle('command', false); cmdActiveRef.current = false }
     mousePhaseRef.current = 'idle'
     targetNormRef.current = null
     currentNormRef.current = null
