@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { GestureRecognizer, GestureRecognizerResult } from '@mediapipe/tasks-vision'
+import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
 import { useMaestroStore } from '../maestroStore'
 
 // ─── Preload bridge type ─────────────────────────────────────────────────────
@@ -60,6 +61,8 @@ const CURSOR_LERP = 0.15
 const PINCH_THRESHOLD = 0.28
 /** Wider threshold used during drag — fingers can separate more during fast movement. */
 const PINCH_THRESHOLD_DRAG = 0.50
+/** Zoom sensitivity: multiplier for vertical hand movement → zoom delta. */
+const ZOOM_SENSITIVITY = 3.0
 
 const PALM_LM = [0, 5, 9, 13, 17]
 
@@ -75,7 +78,7 @@ export const HAND_CONNECTIONS: [number, number][] = [
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type MaestroStatus = 'off' | 'loading' | 'ready' | 'error'
-export type MaestroMode = 'disabled' | 'idle' | 'moving' | 'clicking' | 'dragging'
+export type MaestroMode = 'disabled' | 'idle' | 'moving' | 'clicking' | 'dragging' | 'zooming'
 
 export interface HandLandmark { x: number; y: number; z: number }
 
@@ -145,6 +148,17 @@ function pinchPoint(lms: HandLandmark[]): { x: number; y: number } {
   return { x: (lms[4].x + lms[8].x) / 2, y: (lms[4].y + lms[8].y) / 2 }
 }
 
+/** Fist = at least 3 of 4 non-thumb fingers curled toward wrist. */
+function isFist(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+  let curled = 0
+  for (const t of [8, 12, 16, 20]) {
+    if (dist2D(lms[t], lms[0]) < ps * 1.3) curled++
+  }
+  return curled >= 3
+}
+
 /** All 5 fingers extended = open palm. Used for toggle detection. */
 function isOpenPalm(lms: HandLandmark[]): boolean {
   const ps = palmSize(lms)
@@ -184,6 +198,8 @@ function toScreenCoords(normX: number, normY: number): { absX: number; absY: num
 
 export function useMaestro(): MaestroState {
   const maestroEnabled = useMaestroStore((s) => s.settings.enabled)
+  const { zoomAt } = useCameraStore()
+
   const [status, setStatus]               = useState<MaestroStatus>('off')
   const [mode, setMode]                   = useState<MaestroMode>('disabled')
   const [hands, setHands]                 = useState<DetectedHand[]>([])
@@ -214,6 +230,8 @@ export function useMaestro(): MaestroState {
   const currentNormRef     = useRef<{ x: number; y: number } | null>(null)
   const velocityRef        = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
   const cursorRafRef       = useRef<number | null>(null)
+  // ── Cmd+scroll zoom (left fist + right hand vertical movement) ──────
+  const prevZoomYRef       = useRef<number | null>(null)
   // ── Drag confidence (prevents noisy mid-drag drops) ───────────────────
   const dragConfidenceRef     = useRef(1)
   const softStopSinceRef     = useRef(0)
@@ -375,14 +393,26 @@ export function useMaestro(): MaestroState {
       return
     }
 
-    // ── Pick the controlling hand ──
+    // ── Cmd+scroll zoom: left fist + right hand vertical = zoom ──
+    // Left hand closed fist acts as "Cmd" modifier.
+    // Right hand vertical movement acts as scroll wheel → zoom.
+    if (detectedHands.length >= 2) {
+      const leftHand  = detectedHands.find((h) => h.handedness === 'Left')
+      const rightHand = detectedHands.find((h) => h.handedness === 'Right')
+      if (leftHand && rightHand && isFist(leftHand.landmarks)) {
+        processZoom(rightHand)
+        return
+      }
+    }
+    // Not zooming — clear zoom state
+    prevZoomYRef.current = null
+
+    // ── Pick the controlling hand (single-hand mode) ──
     // Prefer 'Right' but fall back to whatever hand is visible.
-    // MediaPipe can flip the label between frames, so don't be strict.
     const controlHand = detectedHands.find((h) => h.handedness === 'Right')
       ?? detectedHands[0]
 
     // No hand visible — clear target so the cursor loop uses velocity prediction.
-    // State is preserved; when the hand reappears, we pick up seamlessly.
     if (!controlHand) {
       targetNormRef.current = null
       return
@@ -424,6 +454,32 @@ export function useMaestro(): MaestroState {
         if (!gesturesActiveRef.current) resetMouseState()
       }
     }
+  }
+
+  // ── Cmd+scroll zoom: left fist held, right hand vertical = zoom ─────
+
+  function processZoom(rightHand: DetectedHand): void {
+    const center = palmCenter(rightHand.landmarks)
+    const y = center.y  // normalized 0 (top) to 1 (bottom)
+
+    if (prevZoomYRef.current === null) {
+      prevZoomYRef.current = y
+      setMode('zooming')
+      return  // first frame — just record
+    }
+
+    const dy = y - prevZoomYRef.current
+    prevZoomYRef.current = y
+
+    // Moving hand up (dy < 0) → zoom in, down (dy > 0) → zoom out
+    // Like Cmd+scroll: scroll up = zoom in
+    if (Math.abs(dy) > 0.002) {
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      zoomAt(vw / 2, vh / 2, dy * vw * ZOOM_SENSITIVITY)
+    }
+
+    setMode('zooming')
   }
 
   // ── Mouse hand processing ─────────────────────────────────────────────
