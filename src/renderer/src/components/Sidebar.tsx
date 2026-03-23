@@ -7,7 +7,7 @@ import { useSessionStore, BrowserSession } from '../stores/sessionStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { loadWorkspaceCanvas } from '../hooks/useWorkspaceInit'
 import { getCanvasRect } from '../utils/canvasUtils'
-import { getSidebarAgentStatusUi } from '../utils/sidebarAgentStatus'
+import { getSidebarAgentStatusUi } from '../../../modules/servers/agentic_signals/renderer/sidebarStatusUi'
 
 function jumpToNode(node: NodeData): void {
   const zoom = Math.max(useCameraStore.getState().camera.zoom, 0.7)

@@ -1,18 +1,9 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
-import { logAgentDebug } from '../../../shared/agentDebug'
+import { logAgentDebug } from '../../../modules/servers/agentic_signals/shared/debug'
+import type { AgentStatus } from '../../../modules/servers/agentic_signals/shared/types'
 
 export type NodeType = 'terminal' | 'browser' | 'browserv2' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco'
-
-export type AgentStatus =
-  | 'idle'
-  | 'thinking'
-  | 'executing'
-  | 'modifying_files'
-  | 'done'
-  | 'error'
-  | 'needs_permission'
-  | 'needs_input'
 
 export interface NodeData {
   id: string

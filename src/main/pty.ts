@@ -2,9 +2,10 @@ import { ipcMain, WebContents } from 'electron'
 import * as os from 'os'
 import { join } from 'path'
 import { tmuxManager } from './tmux'
-import { AGENT_SIGNAL_PORT } from './agentSignalServer'
-import { detectAgentStatusFromTerminalBuffer, sanitizeTerminalOutput } from '../shared/agentStatusDetection'
-import { logAgentDebug, summarizeText } from '../shared/agentDebug'
+import { AGENT_SIGNAL_PORT } from '../modules/servers/agentic_signals/shared/constants'
+import { detectAgentStatusFromTerminalBuffer, sanitizeTerminalOutput } from '../modules/servers/agentic_signals/shared/detection'
+import { logAgentDebug, summarizeText } from '../modules/servers/agentic_signals/shared/debug'
+import type { AgentStatus } from '../modules/servers/agentic_signals/shared/types'
 
 interface IPty {
   write(data: string): void
@@ -60,7 +61,7 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
 
     let statusBuf = ''
 
-    const sendStatus = (status: string) => {
+    const sendStatus = (status: AgentStatus) => {
       logAgentDebug('pty-main', 'emit-status', { nodeId: id, status })
       const wc = getWebContents()
       if (wc && !wc.isDestroyed()) wc.send('agent:status', { nodeId: id, status })

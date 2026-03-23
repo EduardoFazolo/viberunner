@@ -1,4 +1,4 @@
-export type DetectedAgentStatus = 'idle' | 'needs_permission' | 'needs_input'
+export type DetectedAgentStatus = 'idle' | 'done' | 'needs_permission' | 'needs_input'
 
 const ANSI_RE = /\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07]*(?:\x07|\x1b\\)|[()][AB012]|[NOPQRSTUVWXYZ\\^_`]?)/g
 const PERMISSION_HEADER_RE = /\bPermission\b/i
@@ -10,6 +10,8 @@ const NEEDS_INPUT_TITLE_RE = /\b(?:get|request)\s+user\s+input\b/i
 const NEEDS_PERMISSION_TITLE_RE = /\b(?:get|request)\s+user\s+permissions?\b/i
 const INPUT_BODY_RE = /\b(What would you like to work on(?: [^?\n]+)?\?|Type something\.|Chat about this)\b/i
 const SELECT_FOOTER_RE = /\b(?:Enter|↵)\s+to select\b/i
+const CLAUDE_READY_FOOTER_RE = /\?\s+for shortcuts\b/i
+const CLAUDE_PROMPT_LINE_RE = /^>\s*$/
 const SHELL_PROMPT_LINE_RE = /^[^\n]*[%$#] $/
 
 export function sanitizeTerminalOutput(data: string): string {
@@ -35,6 +37,12 @@ export function detectAgentStatusFromTerminalBuffer(buffer: string): DetectedAge
 
   const lines = trimmed.split('\n').filter((line) => line.length > 0)
   const lastLine = lines.at(-1) ?? ''
+  const hasClaudePrompt = lines.some((line) => CLAUDE_PROMPT_LINE_RE.test(line))
+
+  if (CLAUDE_READY_FOOTER_RE.test(trimmed) && hasClaudePrompt) {
+    return 'done'
+  }
+
   if (lastLine === '>' || SHELL_PROMPT_LINE_RE.test(lastLine)) return 'idle'
 
   return null

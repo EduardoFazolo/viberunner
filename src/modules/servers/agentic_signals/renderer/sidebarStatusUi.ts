@@ -1,4 +1,4 @@
-import type { AgentStatus } from '../stores/nodeStore'
+import type { AgentStatus } from '../shared/types'
 
 export type SidebarAgentStatusUi = {
   isAgentActive: boolean

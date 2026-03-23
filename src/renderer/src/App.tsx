@@ -7,7 +7,7 @@ import { ViewLayer } from './components/ViewLayer'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useWorkspaceInit } from './hooks/useWorkspaceInit'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { useAgentStatus } from './hooks/useAgentStatus'
+import { useAgentStatus } from '../../modules/servers/agentic_signals/renderer/useAgentStatus'
 import { useViewStore } from './stores/viewStore'
 import { setCanvasViewport } from './stores/canvasViewportStore'
 

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import { useNodeStore } from '../stores/nodeStore'
-import { logAgentDebug, summarizeText } from '../../../shared/agentDebug'
+import { useNodeStore } from '../../../../renderer/src/stores/nodeStore'
+import { logAgentDebug, summarizeText } from '../shared/debug'
 
 export function useAgentStatus(): void {
   useEffect(() => {
@@ -10,7 +10,7 @@ export function useAgentStatus(): void {
         status: signal.status,
         message: signal.message ? summarizeText(signal.message) : '',
       })
-      useNodeStore.getState().setAgentStatus(signal.nodeId, signal.status as any, signal.message)
+      useNodeStore.getState().setAgentStatus(signal.nodeId, signal.status, signal.message)
     })
   }, [])
 }

@@ -4,8 +4,8 @@ import { is } from '@electron-toolkit/utils'
 import { setupPtyHandlers, killAllPtys, cleanupOrphanSessions } from './pty'
 import { initDatabase, getAllNodeIds } from './database'
 import { setupWorkspaceHandlers } from './workspace'
-import { startAgentSignalServer } from './agentSignalServer'
-import { setupAgentTools } from './agentHooks'
+import { startAgentSignalServer } from '../modules/servers/agentic_signals/main/server'
+import { setupAgenticSignalTools } from '../modules/servers/agentic_signals/main/setup'
 import { tmuxManager } from './tmux'
 import { setupBrowserSession } from './browserSession'
 import { setupBrowserViewHandlers, destroyAllBrowserViews } from './browserViewManager'
@@ -137,7 +137,7 @@ app.whenReady().then(async () => {
   }
   setupWorkspaceHandlers()
   setupBrowserViewHandlers()
-  setupAgentTools()
+  setupAgenticSignalTools()
   registerNotionHandlers(ipcMain)
   registerTrelloHandlers(ipcMain)
   registerGitHandlers(ipcMain)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getSidebarAgentStatusUi } from '../renderer/src/utils/sidebarAgentStatus'
+import { getSidebarAgentStatusUi } from '../modules/servers/agentic_signals/renderer/sidebarStatusUi'
 
 describe('getSidebarAgentStatusUi', () => {
   it('marks needs_input as Awaiting user input state', () => {

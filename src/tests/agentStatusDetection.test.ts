@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectAgentStatusFromTerminalBuffer, detectAgentStatusFromTitle } from '../shared/agentStatusDetection'
+import { detectAgentStatusFromTerminalBuffer, detectAgentStatusFromTitle } from '../modules/servers/agentic_signals/shared/detection'
 
 describe('detectAgentStatusFromTitle', () => {
   it('detects permission prompts from Claude title text', () => {
@@ -66,5 +66,17 @@ describe('detectAgentStatusFromTerminalBuffer', () => {
         'esc to interrupt',
       ].join('\n'))
     ).toBeNull()
+  })
+
+  it('detects Claude returning to its ready prompt as done', () => {
+    expect(
+      detectAgentStatusFromTerminalBuffer([
+        'Hello! What can I help you with?',
+        '',
+        '>',
+        '',
+        '? for shortcuts',
+      ].join('\n'))
+    ).toBe('done')
   })
 })

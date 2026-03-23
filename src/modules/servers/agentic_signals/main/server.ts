@@ -1,24 +1,8 @@
 import { createServer } from 'http'
 import { WebContents } from 'electron'
-import { logAgentDebug, summarizeText } from '../shared/agentDebug'
-
-export const AGENT_SIGNAL_PORT = 39847
-
-export type AgentStatus =
-  | 'idle'
-  | 'thinking'
-  | 'executing'
-  | 'modifying_files'
-  | 'done'
-  | 'error'
-  | 'needs_permission'
-  | 'needs_input'
-
-export interface AgentSignal {
-  nodeId: string
-  status: AgentStatus
-  message?: string
-}
+import { logAgentDebug, summarizeText } from '../shared/debug'
+import { AGENT_SIGNAL_PORT } from '../shared/constants'
+import type { AgentSignal } from '../shared/types'
 
 export function startAgentSignalServer(getWebContents: () => WebContents | null): void {
   const server = createServer((req, res) => {

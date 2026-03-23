@@ -13,8 +13,8 @@ import { useActivityStore } from '../stores/activityStore'
 import { useActivationStore } from '../stores/activationStore'
 import { NodePlaceholder } from './NodePlaceholder'
 import { normalizeClientPointForElement } from '../utils/terminalMouse'
-import { detectAgentStatusFromTerminalBuffer, detectAgentStatusFromTitle, sanitizeTerminalOutput } from '../../../shared/agentStatusDetection'
-import { logAgentDebug, summarizeText } from '../../../shared/agentDebug'
+import { detectAgentStatusFromTerminalBuffer, detectAgentStatusFromTitle, sanitizeTerminalOutput } from '../../../modules/servers/agentic_signals/shared/detection'
+import { logAgentDebug, summarizeText } from '../../../modules/servers/agentic_signals/shared/debug'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
