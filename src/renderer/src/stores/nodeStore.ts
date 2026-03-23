@@ -156,42 +156,46 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
 
   trackFocus: (id) => {
     const now = Date.now()
+    const node = get().nodes.get(id)
+    if (!node) return
 
-    // Accumulate dwell time on the previously focused node
+    // Compute dwell time for the previously focused node (if any)
     const prevId = get().focusedNodeId
+    let prevDwellPatch: { id: string; totalFocusDuration: number } | null = null
     if (prevId && prevId !== id) {
       const prev = get().nodes.get(prevId)
       if (prev?.lastFocusedAt) {
         const dwell = now - prev.lastFocusedAt
         // Only count reasonable dwells (< 30 min — ignore overnight/idle)
         if (dwell > 0 && dwell < 30 * 60 * 1000) {
-          const totalFocusDuration = (prev.totalFocusDuration ?? 0) + dwell
-          set((s) => {
-            const p = s.nodes.get(prevId)
-            if (!p) return s
-            const nodes = new Map(s.nodes)
-            nodes.set(prevId, { ...p, totalFocusDuration })
-            return syncBack(nodes, s)
-          })
-          window.agent?.saveMetadata(prevId, { totalFocusDuration }).catch(() => {})
+          prevDwellPatch = { id: prevId, totalFocusDuration: (prev.totalFocusDuration ?? 0) + dwell }
         }
       }
     }
 
-    // Track the new focus
-    const node = get().nodes.get(id)
-    if (!node) return
+    // Single atomic state update for both nodes
     const focusCount = (node.focusCount ?? 0) + 1
     const lastFocusedAt = now
     set((s) => {
-      const n = s.nodes.get(id)
-      if (!n) return s
       const nodes = new Map(s.nodes)
+      // Update previous node's dwell time
+      if (prevDwellPatch) {
+        const p = nodes.get(prevDwellPatch.id)
+        if (p) nodes.set(prevDwellPatch.id, { ...p, totalFocusDuration: prevDwellPatch.totalFocusDuration })
+      }
+      // Update new node's focus metadata
+      const n = nodes.get(id)
+      if (!n) return s
       nodes.set(id, { ...n, focusCount, lastFocusedAt })
       return syncBack(nodes, s)
     })
-    // Fire-and-forget persist
+
+    // Fire-and-forget persist — single IPC for new node (always needed)
     window.agent?.saveMetadata(id, { focusCount, lastFocusedAt }).catch(() => {})
+    // Dwell persist only when there's something to save
+    if (prevDwellPatch) {
+      window.agent?.saveMetadata(prevDwellPatch.id, { totalFocusDuration: prevDwellPatch.totalFocusDuration }).catch(() => {})
+    }
   },
 
   add: (type, x, y, props = {}) => {
