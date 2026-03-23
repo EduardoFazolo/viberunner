@@ -129,6 +129,7 @@ function AddWorkspaceDialog({ onClose }: { onClose: () => void }): React.ReactEl
       path,
       lastOpenedAt: Date.now(),
       color: null,
+      description: null,
     }
     await window.workspace.save(ws)
     useWorkspaceStore.setState((s) => ({

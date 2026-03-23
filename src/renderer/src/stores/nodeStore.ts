@@ -17,10 +17,15 @@ export interface NodeData {
   minimized: boolean
   contentScale: number
   props: Record<string, unknown>
+  // Spatial timestamp — from canvas_nodes table
+  createdAt?: number
   // Metadata — persisted in node_metadata table (separate from spatial writes)
   lastFocusedAt?: number
   focusCount?: number
+  totalFocusDuration?: number  // accumulated ms the node has been focused
   tags?: string[]
+  description?: string
+  pinned?: boolean
   // Agent status — ephemeral, reset on restart
   agentStatus?: AgentStatus
 }
@@ -150,10 +155,34 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
   },
 
   trackFocus: (id) => {
+    const now = Date.now()
+
+    // Accumulate dwell time on the previously focused node
+    const prevId = get().focusedNodeId
+    if (prevId && prevId !== id) {
+      const prev = get().nodes.get(prevId)
+      if (prev?.lastFocusedAt) {
+        const dwell = now - prev.lastFocusedAt
+        // Only count reasonable dwells (< 30 min — ignore overnight/idle)
+        if (dwell > 0 && dwell < 30 * 60 * 1000) {
+          const totalFocusDuration = (prev.totalFocusDuration ?? 0) + dwell
+          set((s) => {
+            const p = s.nodes.get(prevId)
+            if (!p) return s
+            const nodes = new Map(s.nodes)
+            nodes.set(prevId, { ...p, totalFocusDuration })
+            return syncBack(nodes, s)
+          })
+          window.agent?.saveMetadata(prevId, { totalFocusDuration }).catch(() => {})
+        }
+      }
+    }
+
+    // Track the new focus
     const node = get().nodes.get(id)
     if (!node) return
     const focusCount = (node.focusCount ?? 0) + 1
-    const lastFocusedAt = Date.now()
+    const lastFocusedAt = now
     set((s) => {
       const n = s.nodes.get(id)
       if (!n) return s
@@ -176,6 +205,7 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
       minimized: false,
       contentScale: 1,
       props,
+      createdAt: Date.now(),
     }
     set((s) => {
       const nodes = new Map(s.nodes)

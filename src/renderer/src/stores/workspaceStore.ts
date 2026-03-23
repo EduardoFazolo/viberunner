@@ -7,6 +7,7 @@ export interface Workspace {
   path: string
   lastOpenedAt: number
   color: string | null
+  description: string | null
 }
 
 export interface NodeSummary {
@@ -47,6 +48,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       path,
       lastOpenedAt: Date.now(),
       color: color ?? null,
+      description: null,
     }
     set((s) => ({ workspaces: [...s.workspaces, ws] }))
     return ws
