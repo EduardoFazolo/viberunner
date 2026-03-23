@@ -17,6 +17,7 @@ const MODE_LABEL: Record<MaestroMode, string> = {
   moving:   'Moving',
   clicking: 'Click',
   dragging: 'Dragging',
+  zooming:  'Zoom',
 }
 
 const MODE_DOT_COLOR: Record<MaestroMode, string> = {
@@ -25,6 +26,7 @@ const MODE_DOT_COLOR: Record<MaestroMode, string> = {
   moving:   '#4ade80',
   clicking: '#fbbf24',
   dragging: '#fb923c',
+  zooming:  '#22d3ee',
 }
 
 interface MaestroOverlayProps {
@@ -126,6 +128,7 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
           {[
             { icon: '\u{1F90F}', label: 'Pinch + release', action: 'Click' },
             { icon: '\u{1F90F}', label: 'Pinch + hold', action: 'Drag' },
+            { icon: '\u270A+\u{1F590}', label: 'Left fist + right hand up/down', action: 'Zoom' },
             { icon: '\u{1F590}\u{1F590}', label: 'Both open palms (1.5s)', action: 'Toggle' },
           ].map(({ icon, label, action }) => (
             <div key={action} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>

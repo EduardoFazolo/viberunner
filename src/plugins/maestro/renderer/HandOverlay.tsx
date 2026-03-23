@@ -18,6 +18,7 @@ const MODE_COLOR: Record<MaestroMode, string> = {
   moving:   'rgba(74,222,128,1)',
   clicking: 'rgba(251,191,36,1)',
   dragging: 'rgba(251,146,60,1)',
+  zooming:  'rgba(34,211,238,1)',
 }
 
 const MODE_LINE: Record<MaestroMode, string> = {
@@ -26,6 +27,7 @@ const MODE_LINE: Record<MaestroMode, string> = {
   moving:   'rgba(74,222,128,0.65)',
   clicking: 'rgba(251,191,36,0.65)',
   dragging: 'rgba(251,146,60,0.65)',
+  zooming:  'rgba(34,211,238,0.65)',
 }
 
 const MODE_GLOW: Record<MaestroMode, string> = {
@@ -34,6 +36,7 @@ const MODE_GLOW: Record<MaestroMode, string> = {
   moving:   'rgba(74,222,128,0.2)',
   clicking: 'rgba(251,191,36,0.2)',
   dragging: 'rgba(251,146,60,0.2)',
+  zooming:  'rgba(34,211,238,0.2)',
 }
 
 interface HandOverlayProps {
