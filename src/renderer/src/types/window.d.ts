@@ -103,6 +103,7 @@ declare global {
       trelloPreloadPath: () => Promise<string>
       canvasWebviewPreloadPath: () => Promise<string>
       getCursorPos: () => Promise<{ x: number; y: number }>
+      openExternal: (url: string) => Promise<void>
     }
 
     orchestrator: {
@@ -231,6 +232,7 @@ declare global {
       branches: (rootPath: string) => Promise<Array<{ name: string; author: string; subject: string; timeAgo: string; isCurrent: boolean }>>
       checkoutBranch: (rootPath: string, name: string, createNew: boolean) => Promise<void>
       push: (rootPath: string) => Promise<{ error?: string }>
+      remoteUrl: (rootPath: string) => Promise<string | null>
     }
 
     fs: {
