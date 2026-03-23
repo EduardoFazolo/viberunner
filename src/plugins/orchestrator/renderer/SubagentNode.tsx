@@ -16,15 +16,16 @@ interface Props {
 }
 
 /**
- * Build a coordination preamble for the agent's task.
- * This tells Claude it's part of a cluster and to avoid stepping on other agents' files.
+ * Build coordination system prompt and the task prompt for the agent.
  */
-function buildClusterPreamble(
+function buildAgentPrompts(
   myTask: string,
   myTitle: string,
   orchestratorNode: NodeData | undefined,
-): string {
-  if (!orchestratorNode) return myTask
+): { systemPrompt: string; userPrompt: string } {
+  if (!orchestratorNode) {
+    return { systemPrompt: '', userPrompt: myTask }
+  }
 
   const mainTask = (orchestratorNode.props.task as string) ?? ''
   const subagentIds = (orchestratorNode.props.subagentIds as string[] | undefined) ?? []
@@ -36,15 +37,11 @@ function buildClusterPreamble(
     if (!node) continue
     const nodeTask = (node.props?.task as string) ?? ''
     const nodeTitle = node.title ?? ''
-    // Include all siblings (including self) for full picture
     siblingTasks.push(`- "${nodeTitle}": ${nodeTask}`)
   }
 
-  const preamble = [
-    `IMPORTANT — You are part of a multi-agent cluster working on: "${mainTask}"`,
-    ``,
-    `Your specific task: ${myTask}`,
-    ``,
+  const systemPrompt = [
+    `You are part of a multi-agent cluster working on: "${mainTask}"`,
     `Other agents are working IN PARALLEL on these tasks:`,
     ...siblingTasks,
     ``,
@@ -56,7 +53,15 @@ function buildClusterPreamble(
     `5. When done, provide a brief summary of which files you created or modified.`,
   ].join('\n')
 
-  return preamble
+  return { systemPrompt, userPrompt: myTask }
+}
+
+/**
+ * Escape a string for safe use inside single quotes in shell.
+ * Replaces ' with '\'' (end quote, escaped quote, start quote).
+ */
+function shellEscape(s: string): string {
+  return s.replace(/'/g, "'\\''")
 }
 
 export function SubagentNode({ node }: Props): React.ReactElement {
@@ -67,23 +72,38 @@ export function SubagentNode({ node }: Props): React.ReactElement {
   const orchestratorId = props.orchestratorId
 
   const handleLaunchClaude = useCallback(() => {
+    // Build the coordination prompts
+    const orchNode = orchestratorId
+      ? useNodeStore.getState().nodes.get(orchestratorId)
+      : undefined
+    const { systemPrompt, userPrompt } = buildAgentPrompts(task, node.title, orchNode)
+
+    // Build the claude flags: pass the task as a CLI argument so it auto-submits
+    // --dangerously-skip-permissions: no permission prompts
+    // --append-system-prompt: coordination rules as system context
+    // The positional "prompt" arg: the actual task (auto-submitted, no paste issues)
+    const flags = [
+      '--dangerously-skip-permissions',
+      systemPrompt ? `--append-system-prompt '${shellEscape(systemPrompt)}'` : '',
+      `'${shellEscape(userPrompt)}'`,
+    ].filter(Boolean).join(' ')
+
     // Create a Claude node at the same position as this subagent
-    // Launch with bypassPermissions so orchestrated agents run autonomously
     const newNode = add('claude', node.x, node.y, {
       cwd: props.workspacePath ?? '',
-      claudeFlags: '--dangerously-skip-permissions',
+      claudeFlags: flags,
     })
 
     // If we belong to an orchestrator, swap our ID in its subagentIds list
     if (orchestratorId) {
       const store = useNodeStore.getState()
-      const orchNode = store.nodes.get(orchestratorId)
-      if (orchNode) {
-        const subagentIds = (orchNode.props.subagentIds as string[] | undefined) ?? []
+      const orchNode2 = store.nodes.get(orchestratorId)
+      if (orchNode2) {
+        const subagentIds = (orchNode2.props.subagentIds as string[] | undefined) ?? []
         const updated = subagentIds.map((id) => (id === node.id ? newNode.id : id))
         store.update(orchestratorId, {
           props: {
-            ...orchNode.props,
+            ...orchNode2.props,
             subagentIds: updated,
           },
         })
@@ -100,45 +120,15 @@ export function SubagentNode({ node }: Props): React.ReactElement {
         orchestratorId,
         task,
         cwd: props.workspacePath ?? '',
+        claudeFlags: flags,
       },
     })
-
-    // Build the full prompt with coordination preamble
-    const orchNode = orchestratorId
-      ? useNodeStore.getState().nodes.get(orchestratorId)
-      : undefined
-    const fullPrompt = buildClusterPreamble(task, node.title, orchNode)
 
     // Activate the terminal immediately so it starts without needing a click
     useActivationStore.getState().activate(newNode.id)
 
     // Remove the subagent note node
     remove(node.id)
-
-    // Wait for the terminal to be ready by listening for output, then send the task.
-    // Send the text and Enter separately to avoid bracketed paste mode swallowing the newline.
-    let sent = false
-    const sendTask = () => {
-      if (sent) return
-      sent = true
-      // Write the prompt text (will be bracketed-pasted by the terminal)
-      window.terminal.write(newNode.id, fullPrompt)
-      // Send Enter as a separate write after a brief gap — outside the paste bracket
-      setTimeout(() => {
-        window.terminal.write(newNode.id, '\r')
-      }, 100)
-    }
-
-    const unsub = window.terminal.onData(newNode.id, () => {
-      unsub()
-      setTimeout(sendTask, 300)
-    })
-
-    // Safety fallback
-    setTimeout(() => {
-      unsub()
-      sendTask()
-    }, 5000)
   }, [node.id, node.x, node.y, node.title, task, orchestratorId, props.workspacePath, add, remove, update])
 
   return (
