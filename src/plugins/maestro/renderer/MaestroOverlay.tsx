@@ -76,7 +76,7 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
                 textAlign: 'center', fontSize: 9,
                 color: 'rgba(167,139,250,0.85)', letterSpacing: '0.03em',
               }}>
-                clap twice (arms up) to activate
+                show both open palms for 1.5s
               </div>
             )}
           </div>
@@ -101,7 +101,7 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
             {status === 'loading' && 'Maestro loading\u2026'}
             {status === 'error'   && 'Camera error'}
             {status === 'ready' && hands.length === 0 && (
-              gesturesActive ? 'Waiting for hand\u2026' : 'Gestures off \u2014 clap to activate'
+              gesturesActive ? 'Waiting for hand\u2026' : 'Gestures off \u2014 both open palms to activate'
             )}
             {status === 'ready' && hands.length > 0 && (
               <span style={{ color: MODE_DOT_COLOR[mode], fontWeight: 600, transition: 'color 0.15s' }}>
@@ -124,11 +124,9 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
             Right hand = Mouse
           </div>
           {[
-            { icon: '\u{1F590}', label: 'Move hand', action: 'Move cursor' },
-            { icon: '\u270A', label: 'Quick close + open', action: 'Click' },
-            { icon: '\u{1F91C}', label: 'Close and hold', action: 'Drag' },
-            { icon: '\u270A\u270A', label: 'Double close (800ms)', action: 'Right click' },
-            { icon: '\u{1F44F}\u{1F44F}', label: 'Two claps (arms up)', action: 'Toggle off' },
+            { icon: '\u{1F90F}', label: 'Pinch + release', action: 'Click' },
+            { icon: '\u{1F90F}', label: 'Pinch + hold', action: 'Drag' },
+            { icon: '\u{1F590}\u{1F590}', label: 'Both open palms (1.5s)', action: 'Toggle' },
           ].map(({ icon, label, action }) => (
             <div key={action} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
               <span style={{ fontSize: 13, minWidth: 24 }}>{icon}</span>

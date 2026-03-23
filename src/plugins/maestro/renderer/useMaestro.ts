@@ -3,13 +3,14 @@
  *
  * Toggle:    Two high-up claps (both arms raised) → enable/disable gesture mode
  * Right hand = system mouse cursor:
- *   Move hand          → move system cursor
- *   Quick close + open → left click
- *   Close and hold     → drag
- *   Double close/open within 800ms → right click
+ *   Open hand             → idle (cursor stays still)
+ *   Pinch (thumb+index)   → cursor snaps to pinch point
+ *     release quickly     → left click
+ *     hold past threshold → canvas drag (pan), release = stop drag
+ *   Double pinch (800ms)  → right click
  *
- * Hands with wrists in the lower portion of the frame are considered idle
- * and ignored (arm must be raised to be active).
+ * Buffer: once in pinch/drag mode, only exit when hand is fully open
+ * (a closed fist does NOT break out — must open hand).
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
@@ -35,26 +36,30 @@ const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.33/w
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task'
 
-/** Wrist y must be below this to count as "arms raised high" for clap toggle (0 = top of frame). */
-const CLAP_ARMS_UP_Y = 0.40
-/** Wrist y must be below this for the hand to be considered active (not idle). */
-const ACTIVE_ARM_Y = 0.60
-/** Normalized palm-center distance for clap detection. */
-const CLAP_THRESHOLD = 0.15
-/** Minimum ms between individual clap detections. */
-const CLAP_COOLDOWN_MS = 400
-/** Window for two claps to register as a toggle. */
-const DOUBLE_CLAP_WINDOW_MS = 1500
-/** Minimum ms between toggles to prevent rapid re-toggling. */
+/** ms both open palms must be held to toggle. */
+const TOGGLE_HOLD_MS = 1500
+/** Minimum ms between toggles. */
 const TOGGLE_COOLDOWN_MS = 2000
-/** ms the hand must stay closed before transitioning from click to drag. */
+/** ms the pinch must be held before transitioning to drag (system mouse down). */
 const DRAG_THRESHOLD_MS = 300
-/** Window for two quick close-opens to register as right-click. */
-const RIGHT_CLICK_WINDOW_MS = 800
-/** Consecutive frames needed to confirm a hand open/close state change. */
-const STATE_CONFIRM_FRAMES = 2
-/** Exponential smoothing factor for cursor position (higher = more smoothing). */
-const MOUSE_SMOOTHING = 0.35
+/** Consecutive frames needed to confirm pinch START. */
+const PINCH_CONFIRM_FRAMES = 2
+/** Per-frame confidence decay when pinch is NOT detected during drag. */
+const DRAG_CONFIDENCE_DECAY = 0.03
+/** Below this → drag stops immediately. */
+const DRAG_CONFIDENCE_HARD_STOP = 0.80
+/** Between HARD_STOP and this → drag stops after 500ms delay. */
+const DRAG_CONFIDENCE_SOFT_STOP = 0.90
+/** Above this → considered fully confident, resets any pending soft-stop timer. */
+const DRAG_CONFIDENCE_RECOVER = 0.96
+/** ms in the soft-stop zone before drag ends. */
+const DRAG_SOFT_STOP_MS = 500
+/** Interpolation speed per 60fps frame (0 = instant, 1 = never). Lower = faster tracking. */
+const CURSOR_LERP = 0.15
+/** Thumb-tip (lm4) to index-tip (lm8) distance threshold for pinch START, relative to palm size. */
+const PINCH_THRESHOLD = 0.28
+/** Wider threshold used during drag — fingers can separate more during fast movement. */
+const PINCH_THRESHOLD_DRAG = 0.50
 
 const PALM_LM = [0, 5, 9, 13, 17]
 
@@ -105,29 +110,59 @@ function dist2D(a: HandLandmark, b: HandLandmark): number {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+function dist3D(a: HandLandmark, b: HandLandmark): number {
+  const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z ?? 0) - (b.z ?? 0)
+  return Math.sqrt(dx * dx + dy * dy + dz * dz)
+}
+
 function distXY(a: { x: number; y: number }, b: { x: number; y: number }): number {
   const dx = a.x - b.x, dy = a.y - b.y
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-/**
- * Palm size = dist(wrist, middle-finger MCP).
- * Used to normalize thresholds so they work at any camera distance.
- */
+/** Palm size = dist(wrist, middle-finger MCP). Normalizes thresholds across distances. */
 function palmSize(lms: HandLandmark[]): number {
   return dist2D(lms[0], lms[9])
 }
 
-/** Check if hand is in a closed/fist position (at least 3 of 4 fingers curled). */
-function isHandClosed(lms: HandLandmark[]): boolean {
+/** Pinch = thumb tip (lm4) touching index tip (lm8), normalized by palm size.
+ *  Uses 3D distance so tilted hands are detected more reliably. */
+function isPinching(lms: HandLandmark[]): boolean {
   const ps = palmSize(lms)
   if (ps < 0.01) return false
+  return dist3D(lms[4], lms[8]) < ps * PINCH_THRESHOLD
+}
+
+/** Wider pinch check used during drag — tolerates more finger separation during fast movement. */
+function isPinchingDrag(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+  return dist3D(lms[4], lms[8]) < ps * PINCH_THRESHOLD_DRAG
+}
+
+/** Midpoint between thumb tip and index tip in normalized coordinates. */
+function pinchPoint(lms: HandLandmark[]): { x: number; y: number } {
+  return { x: (lms[4].x + lms[8].x) / 2, y: (lms[4].y + lms[8].y) / 2 }
+}
+
+/** All 5 fingers extended = open palm. Used for toggle detection. */
+function isOpenPalm(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+  // All 4 non-thumb fingertips must be far from wrist
   const tips = [8, 12, 16, 20]
-  let curled = 0
   for (const t of tips) {
-    if (dist2D(lms[t], lms[0]) < ps * 1.3) curled++
+    if (dist2D(lms[t], lms[0]) < ps * 1.4) return false
   }
-  return curled >= 3
+  // Thumb tip must be far from index MCP (extended outward)
+  if (dist2D(lms[4], lms[5]) < ps * 0.5) return false
+  return true
+}
+
+/** Simple binary: pinching or not. */
+type HandPose = 'open' | 'pinch'
+function classifyPose(lms: HandLandmark[]): HandPose {
+  return isPinching(lms) ? 'pinch' : 'open'
 }
 
 /**
@@ -137,10 +172,8 @@ function isHandClosed(lms: HandLandmark[]): boolean {
 function toScreenCoords(normX: number, normY: number): { absX: number; absY: number; winX: number; winY: number } {
   const vw = window.innerWidth
   const vh = window.innerHeight
-  // Window-relative (for overlay display)
   const winX = (1 - normX) * vw
   const winY = normY * vh
-  // Absolute screen coordinates (for system cursor)
   const titleBarH = window.outerHeight - window.innerHeight
   const absX = window.screenX + winX
   const absY = window.screenY + titleBarH + winY
@@ -151,7 +184,6 @@ function toScreenCoords(normX: number, normY: number): { absX: number; absY: num
 
 export function useMaestro(): MaestroState {
   const maestroEnabled = useMaestroStore((s) => s.settings.enabled)
-
   const [status, setStatus]               = useState<MaestroStatus>('off')
   const [mode, setMode]                   = useState<MaestroMode>('disabled')
   const [hands, setHands]                 = useState<DetectedHand[]>([])
@@ -163,36 +195,46 @@ export function useMaestro(): MaestroState {
   const rafRef        = useRef<number | null>(null)
   const streamRef     = useRef<MediaStream | null>(null)
 
-  // ── Toggle (double high-up clap) ──────────────────────────────────────
-  const gesturesActiveRef = useRef(false)
-  const wasClappingRef    = useRef(false)
-  const lastClapTimeRef   = useRef(0)
-  const clapCountRef      = useRef(0)
-  const firstClapTimeRef  = useRef(0)
-  const lastToggleRef     = useRef(0)
+  // ── Toggle (both open palms held) ──────────────────────────────────────
+  const gesturesActiveRef   = useRef(false)
+  const lastToggleRef       = useRef(0)
+  const bothOpenSinceRef    = useRef(0)
 
   // ── Mouse state machine ───────────────────────────────────────────────
-  type MousePhase = 'idle' | 'grip-pending' | 'dragging'
+  // idle     → hand open or not pinching, cursor stays still
+  // pinching → thumb+index touching, cursor at pinch point, waiting for click-vs-drag
+  // dragging → pinch held past threshold, canvas panning via delta
+  //
+  // Buffer: pinching/dragging only exit on 'open' (not on 'other'/fist)
+  type MousePhase = 'idle' | 'pinching' | 'dragging'
   const mousePhaseRef      = useRef<MousePhase>('idle')
-  const gripStartRef       = useRef(0)
-  const lastClickTimeRef   = useRef(0)
-  const smoothedNormRef    = useRef<{ x: number; y: number } | null>(null)
+  const pinchStartRef      = useRef(0)
+  // Target position (set by MediaPipe at its rate) and current interpolated position
+  const targetNormRef      = useRef<{ x: number; y: number } | null>(null)
+  const currentNormRef     = useRef<{ x: number; y: number } | null>(null)
+  const velocityRef        = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
+  const cursorRafRef       = useRef<number | null>(null)
+  // ── Drag confidence (prevents noisy mid-drag drops) ───────────────────
+  const dragConfidenceRef     = useRef(1)
+  const softStopSinceRef     = useRef(0)
 
-  // ── Hand state confirmation (debounce noise) ──────────────────────────
-  const confirmedClosedRef = useRef(false)
-  const rawClosedFramesRef = useRef(0)
-  const rawOpenFramesRef   = useRef(0)
+  // ── Hand pose confirmation (debounce noise) ───────────────────────────
+  const confirmedPoseRef   = useRef<HandPose>('open')
+  const rawPoseRef         = useRef<HandPose>('open')
+  const rawPoseFramesRef   = useRef(0)
 
   // ── Teardown ──────────────────────────────────────────────────────────
   const stopAll = useCallback(() => {
     if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
+    if (mousePhaseRef.current === 'dragging') void window.maestro?.mouseToggle(false, 'left')
     mousePhaseRef.current = 'idle'
-    smoothedNormRef.current = null
-    confirmedClosedRef.current = false
-    rawClosedFramesRef.current = 0
-    rawOpenFramesRef.current = 0
+    targetNormRef.current = null
+    currentNormRef.current = null
+    confirmedPoseRef.current = 'open'
+    rawPoseRef.current = 'open'
+    rawPoseFramesRef.current = 0
     setHands([]); setMode('disabled'); setMousePos(null)
   }, [])
 
@@ -212,15 +254,15 @@ export function useMaestro(): MaestroState {
           baseOptions: { modelAssetPath: MODEL_URL },
           runningMode: 'VIDEO',
           numHands: 2,
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minHandDetectionConfidence: 0.3,
+          minHandPresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3,
         })
         if (cancelled) { recognizer.close(); return }
         recognizerRef.current = recognizer
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
         })
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); recognizer.close(); return }
         streamRef.current = stream
@@ -240,6 +282,52 @@ export function useMaestro(): MaestroState {
     void init()
     return () => { cancelled = true; stopAll() }
   }, [maestroEnabled, stopAll]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 60fps cursor interpolation loop (decoupled from MediaPipe rate) ──
+  // MediaPipe sets targetNormRef; this loop smoothly moves the cursor there.
+  useEffect(() => {
+    function cursorLoop(): void {
+      const target = targetNormRef.current
+      const current = currentNormRef.current
+
+      if (mousePhaseRef.current !== 'idle' && current) {
+        const vel = velocityRef.current
+
+        if (target) {
+          // MediaPipe has data — lerp toward target and track velocity
+          const dx = target.x - current.x
+          const dy = target.y - current.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          const speed = dist > 0.15 ? 0.3 : dist > 0.05 ? 0.6 : (1 - CURSOR_LERP)
+          const moveX = dx * speed
+          const moveY = dy * speed
+          current.x += moveX
+          current.y += moveY
+          // Smooth velocity estimate (exponential average of per-frame movement)
+          vel.vx = vel.vx * 0.5 + moveX * 0.5
+          vel.vy = vel.vy * 0.5 + moveY * 0.5
+        } else {
+          // No MediaPipe data — predict using velocity with friction
+          current.x = Math.max(0, Math.min(1, current.x + vel.vx))
+          current.y = Math.max(0, Math.min(1, current.y + vel.vy))
+          vel.vx *= 0.85  // friction: decelerate
+          vel.vy *= 0.85
+        }
+
+        const { absX, absY, winX, winY } = toScreenCoords(current.x, current.y)
+        void window.maestro?.mouseMove(Math.round(absX), Math.round(absY))
+        setMousePos({ x: winX, y: winY })
+      } else if (target && mousePhaseRef.current !== 'idle') {
+        // First frame — snap
+        currentNormRef.current = { ...target }
+        velocityRef.current = { vx: 0, vy: 0 }
+      }
+
+      cursorRafRef.current = requestAnimationFrame(cursorLoop)
+    }
+    cursorRafRef.current = requestAnimationFrame(cursorLoop)
+    return () => { if (cursorRafRef.current !== null) cancelAnimationFrame(cursorRafRef.current) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Detection loop ────────────────────────────────────────────────────
   function startLoop(): void {
@@ -273,10 +361,11 @@ export function useMaestro(): MaestroState {
       detectedHands.push({ landmarks: lm, handedness, gesture, score, index: i })
     }
 
-    setHands(detectedHands)
+    // Only update hands state when we actually see hands — don't clear on empty frames
+    if (detectedHands.length > 0) setHands(detectedHands)
 
     // ── Toggle detection (always active, even when gestures disabled) ──
-    detectToggleClap(detectedHands)
+    detectToggle(detectedHands)
 
     // ── If gestures disabled, reset mouse state ──
     if (!gesturesActiveRef.current) {
@@ -286,179 +375,215 @@ export function useMaestro(): MaestroState {
       return
     }
 
-    // ── Find right hand ──
-    // MediaPipe 'Right' = user's right hand
-    const rightHand = detectedHands.find((h) => h.handedness === 'Right')
+    // ── Pick the controlling hand ──
+    // Prefer 'Right' but fall back to whatever hand is visible.
+    // MediaPipe can flip the label between frames, so don't be strict.
+    const controlHand = detectedHands.find((h) => h.handedness === 'Right')
+      ?? detectedHands[0]
 
-    if (!rightHand) {
-      releaseDragIfActive()
-      resetMouseState()
-      setMode('idle')
-      setMousePos(null)
+    // No hand visible — clear target so the cursor loop uses velocity prediction.
+    // State is preserved; when the hand reappears, we pick up seamlessly.
+    if (!controlHand) {
+      targetNormRef.current = null
       return
     }
 
-    // ── Check if right arm is raised (active) ──
-    if (rightHand.landmarks[0].y > ACTIVE_ARM_Y) {
-      releaseDragIfActive()
-      resetMouseState()
-      setMode('idle')
-      setMousePos(null)
-      return
-    }
-
-    // ── Process right hand as mouse ──
-    processMouseHand(rightHand)
+    // ── Process hand as mouse ──
+    processMouseHand(controlHand)
   }
 
-  // ── Toggle: double high-up clap ───────────────────────────────────────
+  // ── Toggle: both hands open palms, held for 1.5s ───────────────────
+  //
+  // Both hands must be detected with all fingers extended (open palm).
+  // Hold for TOGGLE_HOLD_MS to toggle on or off.
+  // Can't accidentally trigger during pinch/drag (those use closed fingers).
 
-  function detectToggleClap(detectedHands: DetectedHand[]): void {
-    if (detectedHands.length < 2) {
-      wasClappingRef.current = false
-      return
-    }
-
-    // Both wrists must be raised high
-    const allArmsUp = detectedHands.every((h) => h.landmarks[0].y < CLAP_ARMS_UP_Y)
-    if (!allArmsUp) {
-      wasClappingRef.current = false
-      return
-    }
-
-    const cA = palmCenter(detectedHands[0].landmarks)
-    const cB = palmCenter(detectedHands[1].landmarks)
-    const isClapping = distXY(cA, cB) < CLAP_THRESHOLD
+  function detectToggle(detectedHands: DetectedHand[]): void {
     const now = Date.now()
 
-    if (isClapping && !wasClappingRef.current && now - lastClapTimeRef.current > CLAP_COOLDOWN_MS) {
-      lastClapTimeRef.current = now
+    // Need 2 hands, both showing open palm
+    const bothOpen = detectedHands.length >= 2
+      && isOpenPalm(detectedHands[0].landmarks)
+      && isOpenPalm(detectedHands[1].landmarks)
 
-      if (clapCountRef.current === 0) {
-        clapCountRef.current = 1
-        firstClapTimeRef.current = now
-      } else if (now - firstClapTimeRef.current <= DOUBLE_CLAP_WINDOW_MS) {
-        // Second clap within window → toggle
-        if (now - lastToggleRef.current > TOGGLE_COOLDOWN_MS) {
-          gesturesActiveRef.current = !gesturesActiveRef.current
-          setGesturesActive(gesturesActiveRef.current)
-          lastToggleRef.current = now
-          releaseDragIfActive()
-          resetMouseState()
-        }
-        clapCountRef.current = 0
-      } else {
-        // First clap expired, start fresh
-        clapCountRef.current = 1
-        firstClapTimeRef.current = now
-      }
+    if (!bothOpen) {
+      bothOpenSinceRef.current = 0
+      return
     }
 
-    wasClappingRef.current = isClapping
+    if (bothOpenSinceRef.current === 0) {
+      bothOpenSinceRef.current = now
+    }
+
+    if (now - bothOpenSinceRef.current >= TOGGLE_HOLD_MS) {
+      if (now - lastToggleRef.current > TOGGLE_COOLDOWN_MS) {
+        gesturesActiveRef.current = !gesturesActiveRef.current
+        setGesturesActive(gesturesActiveRef.current)
+        lastToggleRef.current = now
+        bothOpenSinceRef.current = 0
+        if (!gesturesActiveRef.current) resetMouseState()
+      }
+    }
   }
 
   // ── Mouse hand processing ─────────────────────────────────────────────
 
   function processMouseHand(hand: DetectedHand): void {
     const lms = hand.landmarks
-    const center = palmCenter(lms)
 
-    // Exponential smoothing on normalized coordinates to reduce jitter
-    const prev = smoothedNormRef.current
-    const smoothX = prev ? prev.x * MOUSE_SMOOTHING + center.x * (1 - MOUSE_SMOOTHING) : center.x
-    const smoothY = prev ? prev.y * MOUSE_SMOOTHING + center.y * (1 - MOUSE_SMOOTHING) : center.y
-    smoothedNormRef.current = { x: smoothX, y: smoothY }
-
-    // Convert to screen coordinates (for system cursor) and window coordinates (for overlay)
-    const { absX, absY, winX, winY } = toScreenCoords(smoothX, smoothY)
-
-    // ── Debounced hand open/close ──
-    const rawClosed = isHandClosed(lms)
-    if (rawClosed) { rawClosedFramesRef.current++; rawOpenFramesRef.current = 0 }
-    else           { rawOpenFramesRef.current++;   rawClosedFramesRef.current = 0 }
-
-    const wasClosed = confirmedClosedRef.current
-    if (!wasClosed && rawClosedFramesRef.current >= STATE_CONFIRM_FRAMES) {
-      confirmedClosedRef.current = true
-    } else if (wasClosed && rawOpenFramesRef.current >= STATE_CONFIRM_FRAMES) {
-      confirmedClosedRef.current = false
+    // ── Debounced pose classification ──
+    const rawPose = classifyPose(lms)
+    if (rawPose === rawPoseRef.current) {
+      rawPoseFramesRef.current++
+    } else {
+      rawPoseRef.current = rawPose
+      rawPoseFramesRef.current = 1
     }
-    const isClosed = confirmedClosedRef.current
+    if (rawPoseFramesRef.current >= PINCH_CONFIRM_FRAMES) {
+      confirmedPoseRef.current = rawPose
+    }
+    const pose = confirmedPoseRef.current
 
     const now = Date.now()
     const phase = mousePhaseRef.current
 
-    // Update overlay position for all phases
-    setMousePos({ x: winX, y: winY })
+    // ── Update target position for the 60fps interpolation loop ──
+    // MediaPipe sets the target; the cursor loop smoothly moves there.
+    if (phase !== 'idle') {
+      targetNormRef.current = { x: lms[8].x, y: lms[8].y }
+    }
 
+    // ── IDLE: cursor stays still, wait for pinch ──
     if (phase === 'idle') {
-      // Move system cursor
-      void window.maestro.mouseMove(Math.round(absX), Math.round(absY))
-
-      if (isClosed) {
-        mousePhaseRef.current = 'grip-pending'
-        gripStartRef.current = now
+      if (pose === 'pinch') {
+        // Snap cursor to finger immediately (no lerp on first frame)
+        const raw = lms[8]
+        targetNormRef.current = { x: raw.x, y: raw.y }
+        currentNormRef.current = { x: raw.x, y: raw.y }
+        mousePhaseRef.current = 'pinching'
+        pinchStartRef.current = now
         setMode('clicking')
       } else {
-        setMode('moving')
+        setMode('idle')
+      }
+      return
+    }
+
+    // ── PINCHING: cursor follows index finger, deciding click vs drag ──
+    if (phase === 'pinching') {
+      if (pose === 'open') {
+        // Pinch released → move cursor to final position, then click
+        const pos = currentNormRef.current
+        if (pos) {
+          const { absX, absY } = toScreenCoords(pos.x, pos.y)
+          void window.maestro.mouseMove(Math.round(absX), Math.round(absY))
+            .then(() => window.maestro.mouseClick('left'))
+        } else {
+          void window.maestro.mouseClick('left')
+        }
+        targetNormRef.current = null
+        currentNormRef.current = null
+        mousePhaseRef.current = 'idle'
+        setMode('idle')
+        return
       }
 
-    } else if (phase === 'grip-pending') {
-      // Keep tracking position while deciding click vs drag
-      void window.maestro.mouseMove(Math.round(absX), Math.round(absY))
-
-      if (!isClosed) {
-        // Hand opened → click
-        void window.maestro.mouseClick('left')
-
-        // Check for right-click (second click within window)
-        if (now - lastClickTimeRef.current <= RIGHT_CLICK_WINDOW_MS) {
-          void window.maestro.mouseClick('right')
-          lastClickTimeRef.current = 0
+      if (now - pinchStartRef.current > DRAG_THRESHOLD_MS) {
+        // Held past threshold → ensure cursor is positioned, then mouse down
+        const pos = currentNormRef.current
+        if (pos) {
+          const { absX, absY } = toScreenCoords(pos.x, pos.y)
+          void window.maestro.mouseMove(Math.round(absX), Math.round(absY))
+            .then(() => window.maestro.mouseToggle(true, 'left'))
         } else {
-          lastClickTimeRef.current = now
+          void window.maestro.mouseToggle(true, 'left')
         }
-
-        mousePhaseRef.current = 'idle'
-        setMode('moving')
-      } else if (now - gripStartRef.current > DRAG_THRESHOLD_MS) {
-        // Still closed past threshold → start dragging
-        void window.maestro.mouseToggle(true, 'left')
         mousePhaseRef.current = 'dragging'
         setMode('dragging')
       } else {
         setMode('clicking')
       }
+      return
+    }
 
-    } else if (phase === 'dragging') {
-      // Move while dragging (button already held down)
-      void window.maestro.mouseMove(Math.round(absX), Math.round(absY))
-
-      if (!isClosed) {
-        // Hand opened → end drag
+    // ── DRAGGING: mouse button held, cursor follows index finger ──
+    // Uses confidence-based exit: confidence decays when pinch not detected,
+    // only exits after confidence stays below threshold for sustained period.
+    if (phase === 'dragging') {
+      // Debounced pose says open → intentional release, stop immediately
+      if (pose === 'open') {
         void window.maestro.mouseToggle(false, 'left')
+        dragConfidenceRef.current = 1
+        softStopSinceRef.current = 0
+        targetNormRef.current = null
+    currentNormRef.current = null
         mousePhaseRef.current = 'idle'
-        setMode('moving')
-      } else {
-        setMode('dragging')
+        setMode('idle')
+        return
       }
+
+      // Raw per-frame pinch check with wider threshold — fingers can separate
+      // more during fast drag movement without dropping confidence.
+      const rawPinching = isPinchingDrag(lms)
+
+      if (rawPinching) {
+        dragConfidenceRef.current = 1
+      } else {
+        dragConfidenceRef.current = Math.max(0, dragConfidenceRef.current - DRAG_CONFIDENCE_DECAY)
+      }
+
+      const conf = dragConfidenceRef.current
+
+      // Hard stop: below 80% → end immediately
+      if (conf < DRAG_CONFIDENCE_HARD_STOP) {
+        void window.maestro.mouseToggle(false, 'left')
+        dragConfidenceRef.current = 1
+        softStopSinceRef.current = 0
+        targetNormRef.current = null
+    currentNormRef.current = null
+        mousePhaseRef.current = 'idle'
+        setMode('idle')
+        return
+      }
+
+      // Soft stop: between 80–90% → end after 500ms
+      if (conf < DRAG_CONFIDENCE_SOFT_STOP) {
+        if (softStopSinceRef.current === 0) softStopSinceRef.current = now
+        if (now - softStopSinceRef.current >= DRAG_SOFT_STOP_MS) {
+          void window.maestro.mouseToggle(false, 'left')
+          dragConfidenceRef.current = 1
+          softStopSinceRef.current = 0
+          targetNormRef.current = null
+    currentNormRef.current = null
+          mousePhaseRef.current = 'idle'
+          setMode('idle')
+          return
+        }
+      }
+
+      // Recovered above 96% → reset soft-stop timer
+      if (conf >= DRAG_CONFIDENCE_RECOVER) {
+        softStopSinceRef.current = 0
+      }
+
+      setMode('dragging')
+      return
     }
   }
 
   // ── Utility ───────────────────────────────────────────────────────────
 
-  function releaseDragIfActive(): void {
-    if (mousePhaseRef.current === 'dragging') {
-      void window.maestro.mouseToggle(false, 'left')
-    }
-  }
-
   function resetMouseState(): void {
+    if (mousePhaseRef.current === 'dragging') void window.maestro?.mouseToggle(false, 'left')
     mousePhaseRef.current = 'idle'
-    smoothedNormRef.current = null
-    confirmedClosedRef.current = false
-    rawClosedFramesRef.current = 0
-    rawOpenFramesRef.current = 0
+    targetNormRef.current = null
+    currentNormRef.current = null
+    confirmedPoseRef.current = 'open'
+    rawPoseRef.current = 'open'
+    rawPoseFramesRef.current = 0
+    dragConfidenceRef.current = 1
+    softStopSinceRef.current = 0
+    velocityRef.current = { vx: 0, vy: 0 }
   }
 
   return { status, mode, gesturesActive, hands, mousePos, videoRef, connections: HAND_CONNECTIONS }
