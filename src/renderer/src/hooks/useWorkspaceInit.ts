@@ -39,6 +39,7 @@ function rowToNode(row: any): NodeData {
     props: (() => {
       try { return JSON.parse(row.props) } catch { return {} }
     })(),
+    createdAt: row.createdAt,
   }
 }
 
@@ -85,6 +86,7 @@ export function useWorkspaceInit(): void {
           path: home,
           lastOpenedAt: Date.now(),
           color: null,
+          description: null,
         }
         await api.workspace.save(defaultWs)
         dbWorkspaces = [defaultWs]
@@ -162,7 +164,10 @@ export async function loadWorkspaceCanvas(workspaceId: string): Promise<void> {
                 ...node,
                 lastFocusedAt: meta.lastFocusedAt,
                 focusCount: meta.focusCount,
+                totalFocusDuration: meta.totalFocusDuration ?? 0,
                 tags: (() => { try { return JSON.parse(meta.tags) } catch { return [] } })(),
+                description: meta.description ?? undefined,
+                pinned: meta.pinned === 1,
               })
             }
           }

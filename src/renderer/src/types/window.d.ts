@@ -18,7 +18,10 @@ interface NodeMetadataRow {
   nodeId: string
   lastFocusedAt: number
   focusCount: number
+  totalFocusDuration: number
   tags: string // JSON array string
+  description: string | null
+  pinned: number // 0 | 1
 }
 
 interface WorkspaceRow {
@@ -27,6 +30,7 @@ interface WorkspaceRow {
   path: string
   lastOpenedAt: number
   color: string | null
+  description: string | null
 }
 
 interface NodeRow {

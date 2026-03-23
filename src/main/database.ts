@@ -13,6 +13,7 @@ export interface WorkspaceRow {
   path: string
   lastOpenedAt: number
   color: string | null
+  description: string | null
 }
 
 export interface NodeRow {
@@ -49,7 +50,10 @@ export interface NodeMetadataRow {
   nodeId: string
   lastFocusedAt: number
   focusCount: number
+  totalFocusDuration: number
   tags: string // JSON array string
+  description: string | null
+  pinned: number // 0 | 1
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +143,23 @@ function migrate(): void {
   if (!cols.some((c) => c.name === 'contentScale')) {
     db.exec('ALTER TABLE canvas_nodes ADD COLUMN contentScale REAL NOT NULL DEFAULT 1')
   }
+
+  // Voice-commands metadata migrations
+  const metaCols = db.prepare('PRAGMA table_info(node_metadata)').all() as { name: string }[]
+  if (!metaCols.some((c) => c.name === 'totalFocusDuration')) {
+    db.exec('ALTER TABLE node_metadata ADD COLUMN totalFocusDuration INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!metaCols.some((c) => c.name === 'description')) {
+    db.exec('ALTER TABLE node_metadata ADD COLUMN description TEXT')
+  }
+  if (!metaCols.some((c) => c.name === 'pinned')) {
+    db.exec('ALTER TABLE node_metadata ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+  }
+
+  const wsCols = db.prepare('PRAGMA table_info(workspaces)').all() as { name: string }[]
+  if (!wsCols.some((c) => c.name === 'description')) {
+    db.exec('ALTER TABLE workspaces ADD COLUMN description TEXT')
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,13 +172,14 @@ export function getWorkspaces(): WorkspaceRow[] {
 
 export function saveWorkspace(w: WorkspaceRow): void {
   db.prepare(`
-    INSERT INTO workspaces (id, name, path, lastOpenedAt, color)
-    VALUES (@id, @name, @path, @lastOpenedAt, @color)
+    INSERT INTO workspaces (id, name, path, lastOpenedAt, color, description)
+    VALUES (@id, @name, @path, @lastOpenedAt, @color, @description)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       path = excluded.path,
       lastOpenedAt = excluded.lastOpenedAt,
-      color = excluded.color
+      color = excluded.color,
+      description = excluded.description
   `).run(w)
 }
 
@@ -289,14 +311,20 @@ export function upsertNodeMetadata(nodeId: string, patch: Partial<Omit<NodeMetad
     nodeId,
     lastFocusedAt: patch.lastFocusedAt ?? existing?.lastFocusedAt ?? 0,
     focusCount: patch.focusCount ?? existing?.focusCount ?? 0,
+    totalFocusDuration: patch.totalFocusDuration ?? existing?.totalFocusDuration ?? 0,
     tags: patch.tags ?? existing?.tags ?? '[]',
+    description: patch.description ?? existing?.description ?? null,
+    pinned: patch.pinned ?? existing?.pinned ?? 0,
   }
   db.prepare(`
-    INSERT INTO node_metadata (nodeId, lastFocusedAt, focusCount, tags)
-    VALUES (@nodeId, @lastFocusedAt, @focusCount, @tags)
+    INSERT INTO node_metadata (nodeId, lastFocusedAt, focusCount, totalFocusDuration, tags, description, pinned)
+    VALUES (@nodeId, @lastFocusedAt, @focusCount, @totalFocusDuration, @tags, @description, @pinned)
     ON CONFLICT(nodeId) DO UPDATE SET
       lastFocusedAt = excluded.lastFocusedAt,
       focusCount = excluded.focusCount,
-      tags = excluded.tags
+      totalFocusDuration = excluded.totalFocusDuration,
+      tags = excluded.tags,
+      description = excluded.description,
+      pinned = excluded.pinned
   `).run(row)
 }
