@@ -193,6 +193,8 @@ contextBridge.exposeInMainWorld('maestro', {
     ipcRenderer.invoke('maestro:mouse-toggle', down, button),
   getMousePos: (): Promise<{ x: number; y: number }> =>
     ipcRenderer.invoke('maestro:mouse-get-pos'),
+  keyToggle: (key: string, down: boolean): Promise<void> =>
+    ipcRenderer.invoke('maestro:key-toggle', key, down),
 })
 
 contextBridge.exposeInMainWorld('browser', {
