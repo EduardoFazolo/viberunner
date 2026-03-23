@@ -2,7 +2,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs'
 
-export function installClaudeHooks(signalBin: string): void {
+export function installClaudeHooks(signalBin: string, fileChangeBin: string): void {
   const claudeDir = join(homedir(), '.claude')
   const settingsPath = join(claudeDir, 'settings.json')
 
@@ -17,6 +17,9 @@ export function installClaudeHooks(signalBin: string): void {
     PreToolUse: [
       { matcher: 'Write|Edit|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: `${signalBin} modifying_files` }] },
       { matcher: 'Bash', hooks: [{ type: 'command', command: `${signalBin} executing` }] },
+    ],
+    PostToolUse: [
+      { matcher: 'Write|Edit|MultiEdit', hooks: [{ type: 'command', command: fileChangeBin }] },
     ],
   }
 

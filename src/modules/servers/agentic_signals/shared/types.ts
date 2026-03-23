@@ -13,3 +13,9 @@ export interface AgentSignal {
   status: AgentStatus
   message?: string
 }
+
+export interface AgentFileChange {
+  nodeId: string
+  filePath: string
+  toolName: string // 'Write' | 'Edit' | 'MultiEdit'
+}

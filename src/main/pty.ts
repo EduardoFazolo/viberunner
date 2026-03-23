@@ -51,12 +51,17 @@ export function setupPtyHandlers(getWebContents: () => WebContents | null): void
         PATH: existingPath.includes(canvaBin) ? existingPath : `${canvaBin}:${existingPath}`,
       },
     }
+    // Support shell strings with args (e.g. "claude --permission-mode bypassPermissions")
+    const shellParts = defaultShell.split(/\s+/)
+    const shellBin = shellParts[0]
+    const shellArgs = shellParts.slice(1)
+
     let ptyProcess: Awaited<ReturnType<typeof pty.spawn>>
     try {
-      ptyProcess = pty.spawn(defaultShell, [], { ...spawnOpts, cwd: defaultCwd })
+      ptyProcess = pty.spawn(shellBin, shellArgs, { ...spawnOpts, cwd: defaultCwd })
     } catch {
       // cwd no longer exists — fall back to home directory
-      ptyProcess = pty.spawn(defaultShell, [], { ...spawnOpts, cwd: os.homedir() })
+      ptyProcess = pty.spawn(shellBin, shellArgs, { ...spawnOpts, cwd: os.homedir() })
     }
 
     let statusBuf = ''

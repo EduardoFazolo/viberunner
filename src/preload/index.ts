@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AgentSignal } from '../modules/servers/agentic_signals/shared/types'
+import type { AgentSignal, AgentFileChange } from '../modules/servers/agentic_signals/shared/types'
+import type {
+  OrchestratorStartPayload,
+  SubagentSpawnedEvent,
+  OrchestratorStatusEvent,
+  NoteUpdateEvent,
+} from '../plugins/orchestrator/shared/types'
 
 interface NodeMetadataRow { nodeId: string; lastFocusedAt: number; focusCount: number; tags: string }
 
@@ -150,6 +156,12 @@ contextBridge.exposeInMainWorld('agent', {
     ipcRenderer.on('agent:status', listener)
     return () => ipcRenderer.removeListener('agent:status', listener)
   },
+
+  onFileChange: (cb: (event: AgentFileChange & { orchestratorId: string }) => void): (() => void) => {
+    const listener = (_: unknown, event: AgentFileChange & { orchestratorId: string }) => cb(event)
+    ipcRenderer.on('agent:file-change', listener)
+    return () => ipcRenderer.removeListener('agent:file-change', listener)
+  },
 })
 
 contextBridge.exposeInMainWorld('app', {
@@ -240,6 +252,35 @@ contextBridge.exposeInMainWorld('lovable', {
 
   installMcpGlobal: (): Promise<void> =>
     ipcRenderer.invoke('lovable:install-mcp-global'),
+})
+
+contextBridge.exposeInMainWorld('orchestrator', {
+  start: (orchestratorId: string, payload: OrchestratorStartPayload): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('orchestrator:start', orchestratorId, payload),
+
+  cancel: (orchestratorId: string): Promise<void> =>
+    ipcRenderer.invoke('orchestrator:cancel', orchestratorId),
+
+  registerNode: (nodeId: string, orchestratorId: string): Promise<void> =>
+    ipcRenderer.invoke('orchestrator:register-node', nodeId, orchestratorId),
+
+  onNodeCreated: (cb: (event: SubagentSpawnedEvent) => void): (() => void) => {
+    const listener = (_: unknown, event: SubagentSpawnedEvent) => cb(event)
+    ipcRenderer.on('orchestrator:node-created', listener)
+    return () => ipcRenderer.removeListener('orchestrator:node-created', listener)
+  },
+
+  onStatus: (cb: (event: OrchestratorStatusEvent) => void): (() => void) => {
+    const listener = (_: unknown, event: OrchestratorStatusEvent) => cb(event)
+    ipcRenderer.on('orchestrator:status', listener)
+    return () => ipcRenderer.removeListener('orchestrator:status', listener)
+  },
+
+  onNoteUpdate: (cb: (event: NoteUpdateEvent) => void): (() => void) => {
+    const listener = (_: unknown, event: NoteUpdateEvent) => cb(event)
+    ipcRenderer.on('orchestrator:note-update', listener)
+    return () => ipcRenderer.removeListener('orchestrator:note-update', listener)
+  },
 })
 
 contextBridge.exposeInMainWorld('notion', {

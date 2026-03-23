@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { nanoid } from 'nanoid'
 import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
 import { getActiveWorkspace } from '../../../renderer/src/stores/workspaceStore'
@@ -34,6 +35,20 @@ interface Agent {
 }
 
 const AGENTS: Agent[] = [
+  {
+    id: 'orchestrate',
+    label: 'Orchestrate',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 20 20" fill="none">
+        <circle cx="10" cy="10" r="3" fill="currentColor"/>
+        <circle cx="3" cy="5" r="2" fill="currentColor" opacity="0.6"/>
+        <circle cx="17" cy="5" r="2" fill="currentColor" opacity="0.6"/>
+        <circle cx="3" cy="15" r="2" fill="currentColor" opacity="0.6"/>
+        <circle cx="17" cy="15" r="2" fill="currentColor" opacity="0.6"/>
+        <path d="M5 5.5L8 8.5M15 5.5L12 8.5M5 14.5L8 11.5M15 14.5L12 11.5" stroke="currentColor" strokeWidth="1.2" opacity="0.5"/>
+      </svg>
+    ),
+  },
   {
     id: 'claude',
     label: 'Claude',
@@ -83,6 +98,61 @@ export function TrelloDropModal({ payload, onClose }: Props): React.ReactElement
   }, [workspace?.path])
 
   const handleStart = useCallback(async (agentId: string) => {
+    if (agentId === 'orchestrate') {
+      setLoading(true)
+      try {
+        const cwd = workspace?.path || ''
+
+        if (autoBranch && !branchBlocked && cwd) {
+          await window.git.checkoutBranch(cwd, branchName, true)
+        }
+
+        const canvasEl = document.querySelector('[data-canvas-root]')
+        const canvasRect = canvasEl?.getBoundingClientRect()
+        if (!canvasRect) return
+
+        const camera = useCameraStore.getState().camera
+        const wx = (clientX - canvasRect.left - camera.x) / camera.zoom
+        const wy = (clientY - canvasRect.top - camera.y) / camera.zoom
+
+        let markdown = title
+        const prepared = getPreparedTrelloExport(cardId)
+        if (prepared) {
+          markdown = prepared.markdown
+        } else if (apiKey && token) {
+          try {
+            const result = await primeTrelloExport(apiKey, token, cardId)
+            markdown = result.markdown
+          } catch {}
+        } else {
+          try {
+            const card = await window.trello.fetchCardWithSession(partition, cardId)
+            if (card.desc) markdown = `${card.name}\n\n${card.desc}`
+          } catch {}
+        }
+
+        const node = useNodeStore.getState().add('orchestrator', wx, wy, {
+          task: title,
+          status: 'idle',
+          subagentIds: [],
+        })
+
+        await window.orchestrator.start(node.id, {
+          task: title,
+          markdown,
+          worldX: wx,
+          worldY: wy,
+          workspacePath: workspace?.path,
+        })
+
+        onClose()
+      } catch (e) {
+        console.error('[TrelloDropModal] orchestrate error:', e)
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
     if (agentId === 'note') {
       setLoading(true)
       try {
@@ -231,13 +301,14 @@ export function TrelloDropModal({ payload, onClose }: Props): React.ReactElement
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {AGENTS.map((agent) => {
+              const isOrchestrate = agent.id === 'orchestrate'
               const isPrimary = agent.id === 'claude'
-              const borderColor = isPrimary ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.08)'
-              const bgColor = isPrimary ? 'rgba(167,139,250,0.08)' : 'rgba(255,255,255,0.04)'
-              const borderHover = isPrimary ? 'rgba(167,139,250,0.45)' : 'rgba(255,255,255,0.15)'
-              const bgHover = isPrimary ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.07)'
-              const iconColor = isPrimary ? 'rgba(167,139,250,0.9)' : 'rgba(255,255,255,0.45)'
-              const iconBg = isPrimary ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.07)'
+              const borderColor = isOrchestrate ? 'rgba(52,211,153,0.25)' : isPrimary ? 'rgba(167,139,250,0.25)' : 'rgba(255,255,255,0.08)'
+              const bgColor = isOrchestrate ? 'rgba(52,211,153,0.07)' : isPrimary ? 'rgba(167,139,250,0.08)' : 'rgba(255,255,255,0.04)'
+              const borderHover = isOrchestrate ? 'rgba(52,211,153,0.45)' : isPrimary ? 'rgba(167,139,250,0.45)' : 'rgba(255,255,255,0.15)'
+              const bgHover = isOrchestrate ? 'rgba(52,211,153,0.14)' : isPrimary ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.07)'
+              const iconColor = isOrchestrate ? 'rgba(52,211,153,0.9)' : isPrimary ? 'rgba(167,139,250,0.9)' : 'rgba(255,255,255,0.45)'
+              const iconBg = isOrchestrate ? 'rgba(52,211,153,0.15)' : isPrimary ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.07)'
               return (
                 <button
                   key={agent.id}
