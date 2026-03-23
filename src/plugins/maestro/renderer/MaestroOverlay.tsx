@@ -56,7 +56,7 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
 
       {/* Bottom-right UI */}
       <div style={{
-        position: 'fixed', bottom: 20, right: 20, zIndex: 9999,
+        position: 'fixed', bottom: 20, right: 20, zIndex: 2147483647,
         display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8,
         pointerEvents: 'none',
       }}>
@@ -117,7 +117,7 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
       {/* Gesture legend — top-right, shown when gestures active and no hands */}
       {status === 'ready' && gesturesActive && hands.length === 0 && (
         <div style={{
-          position: 'fixed', top: 20, right: 20, zIndex: 9997,
+          position: 'fixed', top: 20, right: 20, zIndex: 2147483646,
           padding: '10px 14px', borderRadius: 10,
           background: 'rgba(13,13,13,0.75)', border: '1px solid rgba(255,255,255,0.07)',
           backdropFilter: 'blur(8px)', pointerEvents: 'none',
