@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid'
 import { logAgentDebug } from '../../../modules/servers/agentic_signals/shared/debug'
 import type { AgentStatus } from '../../../modules/servers/agentic_signals/shared/types'
 
-export type NodeType = 'terminal' | 'browser' | 'browserv2' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco'
+export type NodeType = 'terminal' | 'browser' | 'browserv2' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco' | 'orchestrator' | 'subagent'
 
 export interface NodeData {
   id: string
@@ -65,6 +65,8 @@ const DEFAULT_SIZES: Record<NodeType, { width: number; height: number }> = {
   trello: { width: 900, height: 700 },
   claude: { width: 700, height: 480 },
   monaco: { width: 1000, height: 640 },
+  orchestrator: { width: 520, height: 300 },
+  subagent: { width: 460, height: 180 },
 }
 
 const DEFAULT_TITLES: Record<NodeType, string> = {
@@ -77,6 +79,8 @@ const DEFAULT_TITLES: Record<NodeType, string> = {
   trello: 'Trello',
   claude: 'Claude',
   monaco: 'Untitled',
+  orchestrator: 'Orchestrator',
+  subagent: 'Sub-agent',
 }
 
 // Sync helper: after mutating `nodes`, write it back into workspaceNodes

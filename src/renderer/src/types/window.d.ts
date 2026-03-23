@@ -1,4 +1,10 @@
 import type { AgentSignal } from '../../../modules/servers/agentic_signals/shared/types'
+import type {
+  OrchestratorStartPayload,
+  SubagentSpawnedEvent,
+  OrchestratorStatusEvent,
+  NoteUpdateEvent,
+} from '../../../plugins/orchestrator/shared/types'
 
 // Global window API types exposed via contextBridge
 
@@ -96,6 +102,14 @@ declare global {
       trelloPreloadPath: () => Promise<string>
       canvasWebviewPreloadPath: () => Promise<string>
       getCursorPos: () => Promise<{ x: number; y: number }>
+    }
+
+    orchestrator: {
+      start: (orchestratorId: string, payload: OrchestratorStartPayload) => Promise<{ ok: boolean }>
+      cancel: (orchestratorId: string) => Promise<void>
+      onNodeCreated: (cb: (event: SubagentSpawnedEvent) => void) => () => void
+      onStatus: (cb: (event: OrchestratorStatusEvent) => void) => () => void
+      onNoteUpdate: (cb: (event: NoteUpdateEvent) => void) => () => void
     }
 
     lovable: {
