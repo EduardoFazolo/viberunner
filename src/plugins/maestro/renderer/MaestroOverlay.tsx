@@ -2,9 +2,9 @@
  * MaestroOverlay — status UI + hand skeleton overlay.
  *
  * Renders:
- *   - HandOverlay: full-viewport canvas with color-coded hand skeletons
+ *   - HandOverlay: full-viewport canvas with hand skeletons + cursor
  *   - Webcam preview: small mirrored thumbnail (bottom-right)
- *   - Status pill: shows current mode (pan / zoom-in / zoom-out / idle)
+ *   - Status pill: shows current mode (moving / clicking / dragging / idle / disabled)
  */
 
 import React from 'react'
@@ -12,19 +12,19 @@ import { HandOverlay } from './HandOverlay'
 import type { MaestroState, MaestroMode } from './useMaestro'
 
 const MODE_LABEL: Record<MaestroMode, string> = {
-  idle:      'Idle',
-  pan:       'Pan',
-  'zoom-in': 'Zoom in',
-  'zoom-out':'Zoom out',
-  pinching:  'Focus…',
+  disabled: 'Disabled',
+  idle:     'Idle',
+  moving:   'Moving',
+  clicking: 'Click',
+  dragging: 'Dragging',
 }
 
 const MODE_DOT_COLOR: Record<MaestroMode, string> = {
-  idle:      '#a78bfa',
-  pan:       '#fb923c',
-  'zoom-in': '#4ade80',
-  'zoom-out':'#f87171',
-  pinching:  '#22d3ee',
+  disabled: '#64748b',
+  idle:     '#a78bfa',
+  moving:   '#4ade80',
+  clicking: '#fbbf24',
+  dragging: '#fb923c',
 }
 
 interface MaestroOverlayProps {
@@ -32,26 +32,23 @@ interface MaestroOverlayProps {
 }
 
 export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactElement | null {
-  const { status, mode, hands, activeHandIndex, videoRef, connections } = state
+  const { status, mode, gesturesActive, hands, mousePos, videoRef, connections } = state
 
   if (status === 'off') return null
-
-  const activeHand = activeHandIndex !== null ? hands[activeHandIndex] : null
-  const activeHandedness = activeHand?.handedness ?? null
 
   return (
     <>
       {/* Hidden video element for MediaPipe */}
       <video ref={videoRef} muted playsInline style={{ display: 'none' }} />
 
-      {/* Hand skeleton overlay */}
+      {/* Hand skeleton overlay + cursor */}
       {status === 'ready' && hands.length > 0 && (
         <HandOverlay
           hands={hands}
-          activeHandIndex={activeHandIndex}
           connections={connections}
           mode={mode}
-          pinch={state.pinch}
+          gesturesActive={gesturesActive}
+          mousePos={mousePos}
         />
       )}
 
@@ -72,14 +69,14 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
           }}>
             <WebcamMirror videoRef={videoRef} />
 
-            {/* Clap hint when both hands visible */}
-            {hands.length === 2 && (
+            {/* Toggle hint */}
+            {!gesturesActive && (
               <div style={{
                 position: 'absolute', bottom: 4, left: 0, right: 0,
                 textAlign: 'center', fontSize: 9,
                 color: 'rgba(167,139,250,0.85)', letterSpacing: '0.03em',
               }}>
-                clap to switch
+                clap twice (arms up) to activate
               </div>
             )}
           </div>
@@ -101,27 +98,22 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
           }} />
 
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', fontFamily: 'inherit' }}>
-            {status === 'loading' && 'Maestro loading…'}
+            {status === 'loading' && 'Maestro loading\u2026'}
             {status === 'error'   && 'Camera error'}
-            {status === 'ready' && hands.length === 0 && 'Waiting for hand…'}
+            {status === 'ready' && hands.length === 0 && (
+              gesturesActive ? 'Waiting for hand\u2026' : 'Gestures off \u2014 clap to activate'
+            )}
             {status === 'ready' && hands.length > 0 && (
-              <>
-                <span style={{ color: MODE_DOT_COLOR[mode], fontWeight: 600, transition: 'color 0.15s' }}>
-                  {MODE_LABEL[mode]}
-                </span>
-                {activeHandedness && (
-                  <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 5 }}>
-                    · {activeHandedness === 'Left' ? 'R' : 'L'}
-                  </span>
-                )}
-              </>
+              <span style={{ color: MODE_DOT_COLOR[mode], fontWeight: 600, transition: 'color 0.15s' }}>
+                {MODE_LABEL[mode]}
+              </span>
             )}
           </span>
         </div>
       </div>
 
-      {/* Gesture legend overlay — top-right, fades when active */}
-      {status === 'ready' && hands.length === 0 && (
+      {/* Gesture legend — top-right, shown when gestures active and no hands */}
+      {status === 'ready' && gesturesActive && hands.length === 0 && (
         <div style={{
           position: 'fixed', top: 20, right: 20, zIndex: 9997,
           padding: '10px 14px', borderRadius: 10,
@@ -129,16 +121,17 @@ export function MaestroOverlay({ state }: MaestroOverlayProps): React.ReactEleme
           backdropFilter: 'blur(8px)', pointerEvents: 'none',
         }}>
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginBottom: 8, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            Gestures
+            Right hand = Mouse
           </div>
           {[
-            { icon: '✊', label: 'Grab (fist)', action: 'Pan' },
-            { icon: '🤚', label: 'Open palm → camera', action: 'Zoom in' },
-            { icon: '🫷', label: 'Back of hand', action: 'Zoom out' },
-            { icon: '👏', label: 'Clap', action: 'Switch hand' },
+            { icon: '\u{1F590}', label: 'Move hand', action: 'Move cursor' },
+            { icon: '\u270A', label: 'Quick close + open', action: 'Click' },
+            { icon: '\u{1F91C}', label: 'Close and hold', action: 'Drag' },
+            { icon: '\u270A\u270A', label: 'Double close (800ms)', action: 'Right click' },
+            { icon: '\u{1F44F}\u{1F44F}', label: 'Two claps (arms up)', action: 'Toggle off' },
           ].map(({ icon, label, action }) => (
             <div key={action} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-              <span style={{ fontSize: 13 }}>{icon}</span>
+              <span style={{ fontSize: 13, minWidth: 24 }}>{icon}</span>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{label}</span>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.18)', marginLeft: 'auto', paddingLeft: 12 }}>{action}</span>
             </div>
