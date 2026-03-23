@@ -4,7 +4,7 @@
  * and provides: branch info, changed-file links, stage-all, commit, and push.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { GitBranch, ArrowUpFromLine, GitCommitHorizontal, Plus, Minus, X, ChevronDown, ChevronUp, Loader2, Check, AlertCircle } from 'lucide-react'
+import { GitBranch, ArrowUpFromLine, GitCommitHorizontal, GitPullRequestArrow, Plus, Minus, X, ChevronDown, ChevronUp, Loader2, Check, AlertCircle } from 'lucide-react'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
 // Extension → Monaco language ID
@@ -508,6 +508,162 @@ function CommitModal({ gitPath, onClose, onCommitted }: CommitModalProps): React
   )
 }
 
+// ─── Branch Dropdown ──────────────────────────────────────────────────────────
+
+interface BranchEntry {
+  name: string
+  author: string
+  subject: string
+  timeAgo: string
+  isCurrent: boolean
+}
+
+interface BranchDropdownProps {
+  gitPath: string
+  currentBranch: string
+  onClose: () => void
+  onCheckedOut: () => void
+}
+
+function BranchDropdown({ gitPath, currentBranch, onClose, onCheckedOut }: BranchDropdownProps): React.ReactElement {
+  const [branches, setBranches] = useState<BranchEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    window.git.branches(gitPath)
+      .then(all => {
+        // Show last 5 recent branches (excluding current) + ensure main/master is included
+        const nonCurrent = all.filter(b => !b.isCurrent)
+        const mainBranch = nonCurrent.find(b => b.name === 'main' || b.name === 'master')
+        const recent = nonCurrent.filter(b => b.name !== 'main' && b.name !== 'master').slice(0, 5)
+        const result: BranchEntry[] = []
+        if (mainBranch) result.push(mainBranch)
+        for (const b of recent) {
+          if (!result.find(r => r.name === b.name)) result.push(b)
+        }
+        setBranches(result)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [gitPath])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  const checkout = async (name: string) => {
+    try {
+      await window.git.checkoutBranch(gitPath, name, false)
+      onCheckedOut()
+      onClose()
+    } catch (e) {
+      console.error('[BranchDropdown] checkout failed:', e)
+    }
+  }
+
+  // Positioned absolutely on the page: above the overlay panel, anchored bottom-left
+  return (
+    <div
+      ref={dropdownRef}
+      style={{
+        position: 'absolute',
+        bottom: 20,       // overlay is at bottom:20
+        left: 16,         // overlay is at left:16
+        marginBottom: 4,  // small gap above the overlay
+        width: 320,
+        background: 'rgba(18, 18, 18, 0.98)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 10,
+        boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
+        overflow: 'hidden',
+        animation: 'git-pop-in 0.15s ease',
+        zIndex: 600,
+      }}
+    >
+      {/* Header label */}
+      <div style={{
+        padding: '8px 12px 6px',
+        fontSize: 10,
+        color: 'rgba(255,255,255,0.3)',
+        fontFamily: 'ui-monospace, Menlo, monospace',
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        Switch branch
+      </div>
+
+      {loading ? (
+        <div style={{ padding: '12px', fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
+          Loading…
+        </div>
+      ) : branches.length === 0 ? (
+        <div style={{ padding: '12px', fontSize: 11, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>
+          No other branches
+        </div>
+      ) : (
+        <div style={{ maxHeight: 240, overflowY: 'auto', padding: '4px 0' }}>
+          {branches.map(b => (
+            <BranchRow key={b.name} branch={b} onClick={() => checkout(b.name)} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BranchRow({ branch, onClick }: { branch: BranchEntry; onClick: () => void }): React.ReactElement {
+  const [hovered, setHovered] = useState(false)
+  const isMain = branch.name === 'main' || branch.name === 'master'
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 12px',
+        cursor: 'pointer',
+        background: hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
+        transition: 'background 0.1s ease',
+      }}
+    >
+      <GitBranch size={11} color={isMain ? '#4ade80' : 'rgba(255,255,255,0.35)'} style={{ flexShrink: 0 }} />
+      <span style={{
+        fontSize: 11,
+        fontWeight: isMain ? 600 : 400,
+        color: isMain ? '#4ade80' : (hovered ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.6)'),
+        fontFamily: 'ui-monospace, Menlo, monospace',
+        flex: 1,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        transition: 'color 0.1s ease',
+      }}>
+        {branch.name}
+      </span>
+      <span style={{
+        fontSize: 9,
+        color: 'rgba(255,255,255,0.2)',
+        fontFamily: 'ui-monospace, Menlo, monospace',
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
+      }}>
+        {branch.timeAgo}
+      </span>
+    </div>
+  )
+}
+
 // ─── Main GitOverlay component ────────────────────────────────────────────────
 
 export function GitOverlay(): React.ReactElement | null {
@@ -526,6 +682,8 @@ export function GitOverlay(): React.ReactElement | null {
   const [pushState, setPushState] = useState<ActionState>('idle')
   const [visible, setVisible] = useState(false)
   const [pushError, setPushError] = useState<string | null>(null)
+  const [branchDropdownOpen, setBranchDropdownOpen] = useState(false)
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const prevPathRef = useRef<string | null>(null)
 
@@ -565,6 +723,7 @@ export function GitOverlay(): React.ReactElement | null {
       setVisible(true)
       fetchStatus(gitPath)
       pollRef.current = setInterval(() => fetchStatus(gitPath), 3000)
+      window.git.remoteUrl(gitPath).then(url => setRemoteUrl(url)).catch(() => setRemoteUrl(null))
     })
 
     return () => {
@@ -693,32 +852,48 @@ export function GitOverlay(): React.ReactElement | null {
       >
         {/* Header */}
         <div
-          onClick={() => setCollapsed((c) => !c)}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 8,
             padding: '9px 12px',
-            cursor: 'pointer',
             borderBottom: collapsed ? 'none' : '1px solid rgba(255,255,255,0.06)',
+            position: 'relative',
           }}
         >
-          {/* Branch icon */}
-          <GitBranch size={13} color='#a78bfa' style={{ flexShrink: 0 }} />
-
-          {/* Branch name */}
-          <span style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#a78bfa',
-            fontFamily: 'ui-monospace, Menlo, monospace',
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {status.branch}
-          </span>
+          {/* Branch icon + name — clickable to open branch switcher */}
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setBranchDropdownOpen(o => !o) }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              flex: 1,
+              minWidth: 0,
+              padding: '2px 6px 2px 2px',
+              borderRadius: 6,
+              background: branchDropdownOpen ? 'rgba(167,139,250,0.1)' : 'transparent',
+              transition: 'background 0.1s ease',
+            }}
+            onMouseEnter={(e) => { if (!branchDropdownOpen) e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={(e) => { if (!branchDropdownOpen) e.currentTarget.style.background = 'transparent' }}
+          >
+            <GitBranch size={13} color='#a78bfa' style={{ flexShrink: 0 }} />
+            <span style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#a78bfa',
+              fontFamily: 'ui-monospace, Menlo, monospace',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {status.branch}
+            </span>
+            <ChevronDown size={10} color='rgba(167,139,250,0.5)' style={{ flexShrink: 0 }} />
+          </div>
 
           {/* Ahead/behind */}
           {(status.ahead > 0 || status.behind > 0) && (
@@ -750,10 +925,52 @@ export function GitOverlay(): React.ReactElement | null {
             </span>
           )}
 
+          {/* Open PRs on GitHub */}
+          {remoteUrl && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                window.app.openExternal(`${remoteUrl}/pulls`)
+              }}
+              title='Open pull requests on GitHub'
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 24,
+                height: 24,
+                background: 'transparent',
+                border: '1px solid transparent',
+                borderRadius: 6,
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.35)',
+                padding: 0,
+                flexShrink: 0,
+                transition: 'all 0.1s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
+                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
+                e.currentTarget.style.color = 'rgba(255,255,255,0.7)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.borderColor = 'transparent'
+                e.currentTarget.style.color = 'rgba(255,255,255,0.35)'
+              }}
+            >
+              <GitPullRequestArrow size={13} />
+            </button>
+          )}
+
           {/* Collapse toggle */}
-          <span style={{ color: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center' }}>
+          <span
+            onClick={() => setCollapsed((c) => !c)}
+            style={{ color: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}
+          >
             {collapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </span>
+
         </div>
 
         {/* Body */}
@@ -851,6 +1068,16 @@ export function GitOverlay(): React.ReactElement | null {
           </>
         )}
       </div>
+
+      {/* Branch dropdown — rendered outside the overlay to avoid overflow:hidden clipping */}
+      {branchDropdownOpen && gitPath && (
+        <BranchDropdown
+          gitPath={gitPath}
+          currentBranch={status.branch}
+          onClose={() => setBranchDropdownOpen(false)}
+          onCheckedOut={() => fetchStatus(gitPath)}
+        />
+      )}
 
       {/* Commit modal */}
       {commitOpen && gitPath && (

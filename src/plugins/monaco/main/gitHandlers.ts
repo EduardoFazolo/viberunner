@@ -127,6 +127,22 @@ export function registerGitHandlers(ipc: IpcMainLike): void {
     } catch { return [] }
   })
 
+  ipc.handle('git:remoteUrl', async (_e, rootPath: string): Promise<string | null> => {
+    try {
+      const remotes = await git(rootPath).getRemotes(true)
+      const origin = remotes.find(r => r.name === 'origin')
+      if (!origin?.refs?.push) return null
+      let url = origin.refs.push
+      // Convert SSH to HTTPS
+      if (url.startsWith('git@')) {
+        url = url.replace(':', '/').replace('git@', 'https://')
+      }
+      // Strip .git suffix
+      url = url.replace(/\.git$/, '')
+      return url
+    } catch { return null }
+  })
+
   ipc.handle('git:logGraph', async (_e, rootPath: string, maxCount = 150) => {
     try {
       const output = await git(rootPath).raw([

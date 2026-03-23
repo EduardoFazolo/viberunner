@@ -125,6 +125,8 @@ contextBridge.exposeInMainWorld('git', {
     ipcRenderer.invoke('git:branches', rootPath),
   checkoutBranch: (rootPath: string, name: string, createNew: boolean): Promise<void> =>
     ipcRenderer.invoke('git:checkoutBranch', rootPath, name, createNew),
+  remoteUrl: (rootPath: string): Promise<string | null> =>
+    ipcRenderer.invoke('git:remoteUrl', rootPath),
 })
 
 contextBridge.exposeInMainWorld('fs', {
@@ -178,6 +180,8 @@ contextBridge.exposeInMainWorld('app', {
     ipcRenderer.invoke('app:canvasWebviewPreloadPath'),
   getCursorPos: (): Promise<{ x: number; y: number }> =>
     ipcRenderer.invoke('app:getCursorPos'),
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke('app:openExternal', url),
 })
 
 contextBridge.exposeInMainWorld('browser', {

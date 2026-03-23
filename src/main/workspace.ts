@@ -160,6 +160,11 @@ export function setupWorkspaceHandlers(): void {
     await shell.openPath(filePath)
   })
 
+  ipcMain.handle('app:openExternal', async (_e, url: string) => {
+    const { shell } = await import('electron')
+    await shell.openExternal(url)
+  })
+
   ipcMain.handle('fs:readFile', async (_e, filePath: string) => {
     return fs.promises.readFile(filePath, 'utf-8')
   })
