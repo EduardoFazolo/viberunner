@@ -1,9 +1,18 @@
 import { createServer } from 'http'
 import { WebContents } from 'electron'
+import { logAgentDebug, summarizeText } from '../shared/agentDebug'
 
 export const AGENT_SIGNAL_PORT = 39847
 
-export type AgentStatus = 'idle' | 'executing' | 'modifying_files' | 'done' | 'error'
+export type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'executing'
+  | 'modifying_files'
+  | 'done'
+  | 'error'
+  | 'needs_permission'
+  | 'needs_input'
 
 export interface AgentSignal {
   nodeId: string
@@ -23,10 +32,18 @@ export function startAgentSignalServer(getWebContents: () => WebContents | null)
       try {
         const signal = JSON.parse(body) as AgentSignal
         if (!signal.nodeId || !signal.status) { res.writeHead(400).end(); return }
+        logAgentDebug('signal-server', 'received-hook-signal', {
+          nodeId: signal.nodeId,
+          status: signal.status,
+          message: signal.message ? summarizeText(signal.message) : '',
+        })
         const wc = getWebContents()
         if (wc && !wc.isDestroyed()) wc.send('agent:status', signal)
         res.writeHead(200).end()
       } catch {
+        logAgentDebug('signal-server', 'invalid-hook-payload', {
+          body: summarizeText(body),
+        })
         res.writeHead(400).end()
       }
     })

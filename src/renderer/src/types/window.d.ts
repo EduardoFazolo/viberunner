@@ -6,7 +6,15 @@ interface BrowserSessionRow {
   createdAt: number
 }
 
-type AgentStatus = 'idle' | 'executing' | 'modifying_files' | 'done' | 'error'
+type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'executing'
+  | 'modifying_files'
+  | 'done'
+  | 'error'
+  | 'needs_permission'
+  | 'needs_input'
 
 interface AgentSignal {
   nodeId: string

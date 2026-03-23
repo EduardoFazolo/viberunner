@@ -257,15 +257,21 @@ export function BaseNode({ node, children, onContextMenu, titleExtra, noCssZoom 
         {/* Agent status dot */}
         {agentStatus && agentStatus !== 'idle' && (() => {
           const colors: Record<string, string> = {
+            thinking: '#a78bfa',
             executing: '#60a5fa',
             modifying_files: '#fb923c',
+            needs_permission: '#fbbf24',
+            needs_input: '#fbbf24',
             done: '#4ade80',
             error: '#f87171',
           }
           const color = colors[agentStatus] ?? '#9ca3af'
           const label: Record<string, string> = {
+            thinking: 'Thinking',
             executing: 'Running command',
             modifying_files: 'Modifying files',
+            needs_permission: 'Awaiting user input',
+            needs_input: 'Awaiting user input',
             done: 'Done',
             error: 'Error',
           }

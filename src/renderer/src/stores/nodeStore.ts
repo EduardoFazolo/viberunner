@@ -1,9 +1,18 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { logAgentDebug } from '../../../shared/agentDebug'
 
 export type NodeType = 'terminal' | 'browser' | 'browserv2' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco'
 
-export type AgentStatus = 'idle' | 'executing' | 'modifying_files' | 'done' | 'error'
+export type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'executing'
+  | 'modifying_files'
+  | 'done'
+  | 'error'
+  | 'needs_permission'
+  | 'needs_input'
 
 export interface NodeData {
   id: string
@@ -107,22 +116,16 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
     set((s) => {
       const node = s.nodes.get(id)
       if (!node) return s
+      logAgentDebug('node-store', 'set-agent-status', {
+        nodeId: id,
+        from: node.agentStatus ?? '',
+        to: status,
+        persistedToDb: false,
+      })
       const nodes = new Map(s.nodes)
       nodes.set(id, { ...node, agentStatus: status })
       return syncBack(nodes, s)
     })
-    // Auto-clear 'done' after 6 seconds
-    if (status === 'done') {
-      setTimeout(() => {
-        set((s) => {
-          const node = s.nodes.get(id)
-          if (!node || node.agentStatus !== 'done') return s
-          const nodes = new Map(s.nodes)
-          nodes.set(id, { ...node, agentStatus: 'idle' })
-          return syncBack(nodes, s)
-        })
-      }, 6000)
-    }
   },
 
   trackFocus: (id) => {

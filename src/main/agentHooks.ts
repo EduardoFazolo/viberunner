@@ -43,6 +43,7 @@ function installClaudeHooks(): void {
 
   const signalBin = join(homedir(), '.canvaflow', 'bin', 'canvaflow-signal')
   const cfHooks: Record<string, any[]> = {
+    UserPromptSubmit: [{ hooks: [{ type: 'command', command: `${signalBin} thinking` }] }],
     Stop: [{ hooks: [{ type: 'command', command: `${signalBin} done` }] }],
     PreToolUse: [
       { matcher: 'Write|Edit|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: `${signalBin} modifying_files` }] },

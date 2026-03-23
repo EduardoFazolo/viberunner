@@ -13,6 +13,8 @@ import { useActivityStore } from '../stores/activityStore'
 import { useActivationStore } from '../stores/activationStore'
 import { NodePlaceholder } from './NodePlaceholder'
 import { normalizeClientPointForElement } from '../utils/terminalMouse'
+import { detectAgentStatusFromTerminalBuffer, detectAgentStatusFromTitle, sanitizeTerminalOutput } from '../../../shared/agentStatusDetection'
+import { logAgentDebug, summarizeText } from '../../../shared/agentDebug'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator, ContextMenuSub
@@ -100,7 +102,9 @@ export function TerminalNode({ node }: Props): React.ReactElement {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const serializeAddonRef = useRef<SerializeAddon | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const renderInspectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const baseFontSizeRef = useRef<number>(13)
+  const statusBufferRef = useRef('')
   const { update, remove, bringToFront, sendToBack, focusedNodeId, setFocusedNodeId } = useNodeStore()
   const focusedNodeIdRef = useRef(focusedNodeId)
   useEffect(() => { focusedNodeIdRef.current = focusedNodeId }, [focusedNodeId])
@@ -173,6 +177,54 @@ export function TerminalNode({ node }: Props): React.ReactElement {
     fitAddonRef.current = fitAddon
     serializeAddonRef.current = serializeAddon
 
+    const inspectRenderedScreen = (reason: string) => {
+      const active = term.buffer.active
+      const start = active.viewportY
+      const end = Math.min(active.length, start + term.rows)
+      const lines: string[] = []
+      for (let y = start; y < end; y++) {
+        lines.push(active.getLine(y)?.translateToString(true) ?? '')
+      }
+      const snapshot = lines.join('\n')
+      const detected = detectAgentStatusFromTerminalBuffer(snapshot)
+      if (detected) {
+        logAgentDebug('terminal-renderer', 'detected-status-from-screen', {
+          nodeId: node.id,
+          reason,
+          detected,
+          screenTail: summarizeText(snapshot.slice(-600)),
+        })
+        useNodeStore.getState().setAgentStatus(node.id, detected as any)
+        return
+      }
+      if (/\besc to interrupt\b/i.test(snapshot)) {
+        logAgentDebug('terminal-renderer', 'detected-thinking-from-screen', {
+          nodeId: node.id,
+          reason,
+          screenTail: summarizeText(snapshot.slice(-600)),
+        })
+        useNodeStore.getState().setAgentStatus(node.id, 'thinking')
+      } else if (/What would you like to work on|Do you want to proceed|Esc to cancel|Enter to select/i.test(snapshot)) {
+        logAgentDebug('terminal-renderer', 'prompt-like-screen-without-detection', {
+          nodeId: node.id,
+          reason,
+          screenTail: summarizeText(snapshot.slice(-600)),
+        })
+      }
+    }
+
+    const scheduleRenderedScreenInspect = (reason: string) => {
+      if (renderInspectTimerRef.current) clearTimeout(renderInspectTimerRef.current)
+      renderInspectTimerRef.current = setTimeout(() => {
+        renderInspectTimerRef.current = null
+        inspectRenderedScreen(reason)
+      }, 10)
+    }
+
+    const renderDisposable = term.onRender(() => {
+      scheduleRenderedScreenInspect('render')
+    })
+
     // Register so beforeunload can serialize this terminal synchronously
     registerTerminal(node.id, () => serializeAddonRef.current?.serialize() ?? '')
 
@@ -192,10 +244,45 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       term.write(data)
       // Mark this terminal active; auto-idles after 30s of silence
       useActivityStore.getState().markActive(node.id)
+
+      const clean = sanitizeTerminalOutput(data)
+      statusBufferRef.current = (statusBufferRef.current + clean).slice(-4096)
+      const detected = detectAgentStatusFromTerminalBuffer(statusBufferRef.current)
+      if (detected) {
+        logAgentDebug('terminal-renderer', 'detected-status-from-buffer', {
+          nodeId: node.id,
+          detected,
+          chunk: summarizeText(clean),
+          bufferTail: summarizeText(statusBufferRef.current.slice(-400)),
+        })
+        useNodeStore.getState().setAgentStatus(node.id, detected as any)
+        if (detected === 'idle') statusBufferRef.current = ''
+      } else if (/\besc to interrupt\b/i.test(statusBufferRef.current)) {
+        logAgentDebug('terminal-renderer', 'detected-thinking-from-buffer', {
+          nodeId: node.id,
+          bufferTail: summarizeText(statusBufferRef.current.slice(-400)),
+        })
+        useNodeStore.getState().setAgentStatus(node.id, 'thinking')
+      } else if (/What would you like to work on|Do you want to proceed|Esc to cancel|Enter to select/i.test(statusBufferRef.current)) {
+        logAgentDebug('terminal-renderer', 'prompt-like-buffer-without-detection', {
+          nodeId: node.id,
+          chunk: summarizeText(clean),
+          bufferTail: summarizeText(statusBufferRef.current.slice(-400)),
+        })
+      }
+      scheduleRenderedScreenInspect('pty-data')
     })
 
     // xterm → PTY
-    term.onData((data) => window.terminal.write(node.id, data))
+    term.onData((data) => {
+      // Ctrl+C should clear stale active status immediately, even before the shell redraw lands.
+      if (data === '\u0003') {
+        logAgentDebug('terminal-renderer', 'ctrl-c-input', { nodeId: node.id })
+        useNodeStore.getState().setAgentStatus(node.id, 'idle')
+        statusBufferRef.current = ''
+      }
+      window.terminal.write(node.id, data)
+    })
 
     // OSC 7: shell reports CWD as file://hostname/path
     // Most modern shells (zsh+oh-my-zsh, fish, bash with vte) emit this on every cd
@@ -233,10 +320,19 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       const current = useNodeStore.getState().nodes.get(node.id)
       // Only update if it doesn't look like a raw OSC 7 path repeated
       if (!title.startsWith('file://')) {
+        const detected = detectAgentStatusFromTitle(title)
+        logAgentDebug('terminal-renderer', 'title-change', {
+          nodeId: node.id,
+          title,
+          detected: detected ?? '',
+        })
         useNodeStore.getState().update(node.id, {
           title,
           props: { ...current?.props },
         })
+        if (detected) {
+          useNodeStore.getState().setAgentStatus(node.id, detected as any)
+        }
       }
     })
 
@@ -261,8 +357,10 @@ export function TerminalNode({ node }: Props): React.ReactElement {
       }
 
       if (saveTimerRef.current) clearInterval(saveTimerRef.current)
+      if (renderInspectTimerRef.current) clearTimeout(renderInspectTimerRef.current)
 
       unsub()
+      renderDisposable.dispose()
       restoreMousePatch()
       term.dispose()
 

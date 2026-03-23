@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-type AgentStatus = 'idle' | 'executing' | 'modifying_files' | 'done' | 'error'
+type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'executing'
+  | 'modifying_files'
+  | 'done'
+  | 'error'
+  | 'needs_permission'
+  | 'needs_input'
 interface AgentSignal { nodeId: string; status: AgentStatus; message?: string }
 interface NodeMetadataRow { nodeId: string; lastFocusedAt: number; focusCount: number; tags: string }
 
