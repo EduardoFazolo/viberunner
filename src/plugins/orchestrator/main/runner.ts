@@ -7,8 +7,9 @@ import type {
 } from '../shared/types'
 
 const ORCHESTRATOR_W = 520
-const SUBAGENT_H = 180
-const SUBAGENT_GAP = 50
+// Space subagents using Claude node height (480) so they don't overlap when launched
+const SUBAGENT_H = 480
+const SUBAGENT_GAP = 40
 
 const PROMPT = (task: string, markdown: string) => `
 You are a task orchestrator. Break down the following task into 2-5 focused, parallel sub-tasks for specialized agents.
@@ -99,6 +100,7 @@ export function runOrchestrator(
           task: agent.task ?? '',
           worldX: subagentX,
           worldY: subagentY,
+          workspacePath: payload.workspacePath,
         })
 
         sendStatus('spawning', `Created sub-agent: ${agent.title}`, fullText)
@@ -190,6 +192,7 @@ export function runOrchestrator(
           task: agent.task ?? '',
           worldX: subagentX,
           worldY: subagentY,
+          workspacePath: payload.workspacePath,
         })
       })
       spawnedCount = agents.length

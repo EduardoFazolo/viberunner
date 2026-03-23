@@ -2,12 +2,12 @@ import React, { useCallback } from 'react'
 import { BaseNode } from '../../../renderer/src/components/BaseNode'
 import type { NodeData } from '../../../renderer/src/stores/nodeStore'
 import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
-import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
 
 interface SubagentProps {
   task: string
   note?: string
   orchestratorId?: string
+  workspacePath?: string
 }
 
 interface Props {
@@ -15,23 +15,62 @@ interface Props {
 }
 
 export function SubagentNode({ node }: Props): React.ReactElement {
-  const { add } = useNodeStore()
+  const { add, remove, update } = useNodeStore()
   const props = node.props as Partial<SubagentProps>
   const task = props.task ?? ''
   const note = props.note
+  const orchestratorId = props.orchestratorId
 
   const handleLaunchClaude = useCallback(() => {
-    const camera = useCameraStore.getState().camera
-    // Place Claude node to the right of this subagent
-    const cx = node.x + node.width + 60
-    const cy = node.y
+    // Create a Claude node at the same position as this subagent
+    const newNode = add('claude', node.x, node.y, {
+      cwd: props.workspacePath ?? '',
+    })
 
-    const newNode = add('claude', cx, cy, {})
-    // Write the task into the terminal after a short delay for it to start
+    // If we belong to an orchestrator, swap our ID in its subagentIds list
+    if (orchestratorId) {
+      const store = useNodeStore.getState()
+      const orchNode = store.nodes.get(orchestratorId)
+      if (orchNode) {
+        const subagentIds = (orchNode.props.subagentIds as string[] | undefined) ?? []
+        const updated = subagentIds.map((id) => (id === node.id ? newNode.id : id))
+        store.update(orchestratorId, {
+          props: {
+            ...orchNode.props,
+            subagentIds: updated,
+          },
+        })
+      }
+    }
+
+    // Copy the orchestratorId to the new Claude node so ClusterLayer can track it
+    update(newNode.id, {
+      props: {
+        ...newNode.props,
+        orchestratorId,
+        cwd: props.workspacePath ?? '',
+      },
+    })
+
+    // Remove the subagent note node
+    remove(node.id)
+
+    // Wait for the terminal to be ready by listening for output, then send the task
+    const unsub = window.terminal.onData(newNode.id, (data) => {
+      // Claude CLI shows a prompt or welcome text once ready
+      // Any data from the terminal means it's alive — send the task
+      unsub()
+      setTimeout(() => {
+        window.terminal.write(newNode.id, task + '\n')
+      }, 300)
+    })
+
+    // Safety fallback — if we never get data, write after 5s anyway
     setTimeout(() => {
+      unsub()
       window.terminal.write(newNode.id, task + '\n')
-    }, 1500)
-  }, [node.x, node.y, node.width, task, add])
+    }, 5000)
+  }, [node.id, node.x, node.y, task, orchestratorId, props.workspacePath, add, remove, update])
 
   return (
     <BaseNode node={node}>

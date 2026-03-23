@@ -19,7 +19,7 @@ interface Cluster {
 export function ClusterLayer(): React.ReactElement | null {
   const nodes = useNodeStore((s) => s.nodes)
 
-  // Build clusters: orchestrator → its subagents
+  // Build clusters: orchestrator → its child nodes (subagents + launched Claude nodes)
   const clusters: Cluster[] = []
   for (const node of nodes.values()) {
     if (node.type !== 'orchestrator') continue

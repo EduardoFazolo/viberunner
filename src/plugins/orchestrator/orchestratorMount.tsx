@@ -15,6 +15,7 @@ export function OrchestratorMount(): React.ReactElement | null {
       const subagent = store.add('subagent', event.worldX, event.worldY, {
         task: event.task,
         orchestratorId: event.orchestratorId,
+        workspacePath: event.workspacePath,
         note: undefined,
       })
       // Override the auto-generated id so the orchestrator can reference it

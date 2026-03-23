@@ -13,6 +13,7 @@ export interface SubagentSpawnedEvent {
   task: string
   worldX: number
   worldY: number
+  workspacePath?: string
 }
 
 export interface NoteUpdateEvent {
