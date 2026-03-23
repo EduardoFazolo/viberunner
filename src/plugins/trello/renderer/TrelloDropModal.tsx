@@ -101,6 +101,12 @@ export function TrelloDropModal({ payload, onClose }: Props): React.ReactElement
     if (agentId === 'orchestrate') {
       setLoading(true)
       try {
+        const cwd = workspace?.path || ''
+
+        if (autoBranch && !branchBlocked && cwd) {
+          await window.git.checkoutBranch(cwd, branchName, true)
+        }
+
         const canvasEl = document.querySelector('[data-canvas-root]')
         const canvasRect = canvasEl?.getBoundingClientRect()
         if (!canvasRect) return
