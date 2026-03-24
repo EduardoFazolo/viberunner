@@ -28,45 +28,74 @@ function sendStatus(status: AgentStatus): void {
 // System prompt builder
 // ---------------------------------------------------------------------------
 
+// Cache to avoid rebuilding every call
+let _cachedPrompt: { text: string; ts: number } | null = null
+const CACHE_TTL = 5_000
+
 async function buildSystemPrompt(): Promise<string> {
-  const workspacesResult = await executeTool('listWorkspaces', {})
-  const nodesResult = await executeTool('listNodes', {})
-  const cameraResult = await executeTool('getCamera', {})
+  if (_cachedPrompt && Date.now() - _cachedPrompt.ts < CACHE_TTL) {
+    return _cachedPrompt.text
+  }
 
-  const ws = workspacesResult as { workspaces: unknown[]; activeWorkspaceId: string | null }
-  const nd = nodesResult as { nodes: unknown[] }
+  const workspacesResult = await executeTool('listWorkspaces', {}) as { workspaces: any[]; activeWorkspaceId: string | null }
+  const nodesResult = await executeTool('listNodes', {}) as { nodes: any[] }
+  const cameraResult = await executeTool('getCamera', {}) as { x: number; y: number; zoom: number }
 
-  return `You are a voice assistant controlling a canvas-based workspace app called CanvaFlow.
-The user speaks a natural-language command and you respond by calling the appropriate tools.
+  // Slim node data — agent only needs id, type, title, and key metadata
+  const nodes = nodesResult.nodes.map((n: any) => ({
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    pinned: n.pinned || undefined,
+    description: n.description || undefined,
+    focusCount: n.focusCount || undefined,
+  }))
 
-RULES:
-- Be concise. Only respond with text if the user asks a question; otherwise just execute tools silently.
-- You can chain multiple tool calls for multi-step commands.
-- When the user says "this" or "that", infer from context (most recently focused node, etc).
-- For "show me all windows", use fitAll.
-- For "organize", use arrangeNodes with an appropriate strategy.
-- For navigation ("go to X", "focus X"), match by node title or type.
+  const workspaces = workspacesResult.workspaces.map((w: any) => ({
+    id: w.id, name: w.name, description: w.description || undefined,
+  }))
 
-CURRENT STATE:
-Active workspace: ${ws.activeWorkspaceId ?? 'none'}
-Workspaces: ${JSON.stringify(ws.workspaces, null, 2)}
-Nodes in active workspace: ${JSON.stringify(nd.nodes, null, 2)}
-Camera: ${JSON.stringify(cameraResult)}`
+  const text = `You control CanvaFlow, a canvas workspace app.
+
+CRITICAL: You MUST respond ONLY with tool calls. NEVER respond with text. NEVER explain what you're doing. NEVER say "I'll do X". Just call the tool. If you cannot fulfill a request, call fitAll as a fallback.
+
+COMMANDS → TOOLS:
+- "show all/nodes/windows" → fitAll
+- "show/focus/go to X" → focusNode (match by title/type below)
+- "open terminal/browser/claude/editor" → openNode
+- "organize/arrange" → arrangeNodes
+- "close/remove X" → removeNode
+- "switch workspace X" → switchWorkspace
+- "zoom in/out" → setCamera
+
+STATE:
+workspace: ${workspacesResult.activeWorkspaceId}
+workspaces: ${JSON.stringify(workspaces)}
+nodes: ${JSON.stringify(nodes)}
+camera: zoom=${cameraResult.zoom?.toFixed(2) ?? 1}`
+
+  _cachedPrompt = { text, ts: Date.now() }
+  return text
 }
 
 // ---------------------------------------------------------------------------
 // Convert MCP tool defs to OpenAI format
 // ---------------------------------------------------------------------------
 
+// Only expose action tools — read tools are pre-loaded in the system prompt
+const READ_TOOLS = new Set(['listNodes', 'listWorkspaces', 'getCamera'])
+
 function toOpenAITools(): ChatCompletionTool[] {
-  return MCP_TOOLS.map((t) => ({
-    type: 'function' as const,
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.input_schema,
-    },
-  }))
+  return MCP_TOOLS
+    .filter((t) => !READ_TOOLS.has(t.name))
+    .map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.input_schema,
+      },
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -116,30 +145,23 @@ export async function runVoiceAgent(
     let textResponse: string | null = null
 
     // Agentic loop — keep going until the model stops calling tools
-    for (let turn = 0; turn < 10; turn++) {
-      const response = await client.chat.completions.create({
-        model,
-        max_tokens: 1024,
-        tools,
-        messages,
-      })
+    // Single-shot: call the model once, execute all tools, done.
+    // No agentic loop — voice commands should be one action, not a conversation.
+    const response = await client.chat.completions.create({
+      model,
+      max_tokens: 256,
+      tools,
+      tool_choice: 'required' as const,
+      messages,
+    })
 
-      const choice = response.choices[0]
-      if (!choice) break
+    const choice = response.choices[0]
+    if (choice?.message?.content) {
+      textResponse = choice.message.content
+    }
 
-      const msg = choice.message
-      messages.push(msg)
-
-      // Collect text
-      if (msg.content) {
-        textResponse = msg.content
-      }
-
-      // If no tool calls, we're done
-      const toolCalls = msg.tool_calls
-      if (!toolCalls || toolCalls.length === 0) break
-
-      // Execute tool calls
+    const toolCalls = choice?.message?.tool_calls
+    if (toolCalls && toolCalls.length > 0) {
       for (const toolCall of toolCalls) {
         const fnName = toolCall.function.name
         let fnArgs: Record<string, unknown> = {}
@@ -148,23 +170,12 @@ export async function runVoiceAgent(
         const paramSummary = summarizeParams(fnName, fnArgs)
         sendStatus({ state: 'executing', message: `${fnName}${paramSummary ? ': ' + paramSummary : ''}` })
 
-        let resultContent: string
         try {
-          const result = await executeTool(fnName, fnArgs)
-          resultContent = JSON.stringify(result)
+          await executeTool(fnName, fnArgs)
         } catch (err: any) {
-          resultContent = JSON.stringify({ error: err.message })
+          console.error(`[voice-agent] Tool ${fnName} failed:`, err.message)
         }
-
-        messages.push({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          content: resultContent,
-        })
       }
-
-      // If finish reason is "stop", we're done
-      if (choice.finish_reason === 'stop') break
     }
 
     sendStatus({ state: 'done', message: textResponse ?? undefined })

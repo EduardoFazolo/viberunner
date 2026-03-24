@@ -201,7 +201,7 @@ export function registerVoiceHandlers(getWebContents: () => WebContents | null):
   ipcMain.handle('voice:runAgent', async (_e, transcript: string) => {
     let apiKey = ''
     let baseUrl = 'https://api.moonshot.ai/v1'
-    let model = 'kimi-k2-0905-preview'
+    let model = 'kimi-k2-turbo-preview'
     try {
       const raw = getAppState('settings')
       if (raw) {

@@ -15,7 +15,7 @@ const DEFAULTS: Settings = {
   navStyle: 'default',
   voiceApiKey: '',
   voiceBaseUrl: 'https://api.moonshot.ai/v1',
-  voiceModel: 'kimi-k2-0905-preview',
+  voiceModel: 'kimi-k2-turbo-preview',
 }
 
 interface SettingsStore {

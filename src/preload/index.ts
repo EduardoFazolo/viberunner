@@ -287,7 +287,7 @@ contextBridge.exposeInMainWorld('mcp', {
 
   // Respond to a write action
   respond: (id: number, result: unknown): void => {
-    ipcRenderer.invoke(`mcp:result:${id}`, result)
+    ipcRenderer.send(`mcp:result:${id}`, result)
   },
 })
 

@@ -29,13 +29,15 @@ function callRenderer(action: string, params: Record<string, unknown>): Promise<
     const channel = `mcp:result:${id}`
 
     const timeout = setTimeout(() => {
-      ipcMain.removeHandler(channel)
+      ipcMain.removeAllListeners(channel)
       reject(new Error(`MCP action "${action}" timed out`))
     }, 10_000)
 
-    ipcMain.handleOnce(channel, (_e, result: unknown) => {
+    // Use ipcMain.once (event-based) instead of handleOnce (request-response)
+    // because the renderer fires this with ipcRenderer.send, not invoke
+    ipcMain.once(channel, (_e, result: unknown) => {
       clearTimeout(timeout)
-      return result
+      resolve(result)
     })
 
     wc.send('mcp:action', { id, action, params })

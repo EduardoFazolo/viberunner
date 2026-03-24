@@ -97,7 +97,7 @@ function arrangeRadial(items: ArrangeNode[]): Map<string, { x: number; y: number
 
 export function useMcpActions(): void {
   useEffect(() => {
-    const listener = (_event: unknown, msg: { id: number; action: string; params: Record<string, unknown> }) => {
+    const listener = (msg: { id: number; action: string; params: Record<string, unknown> }) => {
       const { id, action, params } = msg
       const respond = (result: unknown) => {
         window.mcp?.respond(id, result)
