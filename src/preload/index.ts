@@ -287,6 +287,20 @@ contextBridge.exposeInMainWorld('orchestrator', {
   },
 })
 
+contextBridge.exposeInMainWorld('windowpicker', {
+  listWindows: (): Promise<Array<{ id: number; name: string; owner: string; pid: number }>> =>
+    ipcRenderer.invoke('windowpicker:listWindows'),
+
+  getThumbnails: (): Promise<Array<{ id: number; thumbnail: string }>> =>
+    ipcRenderer.invoke('windowpicker:getThumbnails'),
+
+  captureWindow: (windowId: number): Promise<string | null> =>
+    ipcRenderer.invoke('windowpicker:captureWindow', windowId),
+
+  focusWindow: (pid: number, owner: string): Promise<void> =>
+    ipcRenderer.invoke('windowpicker:focusWindow', pid, owner),
+})
+
 contextBridge.exposeInMainWorld('notion', {
   fetchPage: (partition: string, pageId: string): Promise<NotionPageChunk> =>
     ipcRenderer.invoke('notion:fetchPage', partition, pageId),
