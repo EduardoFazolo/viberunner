@@ -517,7 +517,10 @@ export function useMaestro(): MaestroState {
 
     // ── Update target position for the 60fps interpolation loop ──
     // MediaPipe sets the target; the cursor loop smoothly moves there.
-    if (phase !== 'idle') {
+    // During 'pinching' phase, freeze cursor at initial pinch point so small
+    // hand movements during a fast pinch don't shift the click away from
+    // the intended target. Only track finger movement once dragging starts.
+    if (phase === 'dragging') {
       targetNormRef.current = { x: lms[8].x, y: lms[8].y }
     }
 
