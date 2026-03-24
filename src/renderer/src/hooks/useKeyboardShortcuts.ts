@@ -1,13 +1,29 @@
 import { useEffect } from 'react'
-import { useNodeStore } from '../stores/nodeStore'
+import { useNodeStore, NodeType } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
 import { fitAllNodes } from '../utils/canvasUtils'
 import { notifyCanvasInteractionEnd, notifyCanvasInteractionStart } from '../utils/canvasInteraction'
 import { getActiveWorkspace } from '../stores/workspaceStore'
+import { zoomFitNode } from '../utils/zoomFocus'
 
 interface Options {
   onSearch: () => void
   onSettings: () => void
+}
+
+function addAndFocus(
+  type: NodeType,
+  offsetX: number,
+  offsetY: number,
+  props?: Record<string, unknown>
+): void {
+  const camera = useCameraStore.getState().camera
+  const vw = document.documentElement.clientWidth / 2
+  const vh = document.documentElement.clientHeight / 2
+  const wx = (vw - camera.x) / camera.zoom
+  const wy = (vh - camera.y) / camera.zoom
+  const node = useNodeStore.getState().add(type, wx - offsetX, wy - offsetY, props)
+  requestAnimationFrame(() => zoomFitNode(node.id))
 }
 
 export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
@@ -15,71 +31,32 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
     const unsub = window.app.onShortcut((name) => {
       switch (name) {
         case 'newTerminal': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
           const cwd = getActiveWorkspace()?.path || ''
-          useNodeStore.getState().add('terminal', wx - 300, wy - 200, { cwd })
+          addAndFocus('terminal', 300, 200, { cwd })
           break
         }
-        case 'newBrowser': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
-          useNodeStore.getState().add('browser', wx - 400, wy - 300)
+        case 'newBrowser':
+          addAndFocus('browser', 400, 300)
           break
-        }
-        case 'newFiles': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
-          useNodeStore.getState().add('files', wx - 350, wy - 240)
+        case 'newFiles':
+          addAndFocus('files', 350, 240)
           break
-        }
         case 'newClaude': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
           const cwd = getActiveWorkspace()?.path || ''
-          useNodeStore.getState().add('claude', wx - 350, wy - 240, { cwd })
+          addAndFocus('claude', 350, 240, { cwd })
           break
         }
         case 'newEditor': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
           const rootPath = getActiveWorkspace()?.path || ''
-          useNodeStore.getState().add('monaco', wx - 500, wy - 320, { rootPath })
+          addAndFocus('monaco', 500, 320, { rootPath })
           break
         }
-        case 'newLovable': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
-          useNodeStore.getState().add('lovable', wx - 460, wy - 360)
+        case 'newLovable':
+          addAndFocus('lovable', 460, 360)
           break
-        }
-        case 'newWindowPicker': {
-          const camera = useCameraStore.getState().camera
-          const vw = document.documentElement.clientWidth / 2
-          const vh = document.documentElement.clientHeight / 2
-          const wx = (vw - camera.x) / camera.zoom
-          const wy = (vh - camera.y) / camera.zoom
-          useNodeStore.getState().add('windowpicker', wx - 240, wy - 200)
+        case 'newWindowPicker':
+          addAndFocus('windowpicker', 240, 200)
           break
-        }
         case 'fitAll':
           notifyCanvasInteractionStart()
           fitAllNodes(useNodeStore.getState().nodes)

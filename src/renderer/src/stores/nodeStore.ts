@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import { logAgentDebug } from '../../../modules/servers/agentic_signals/shared/debug'
 import type { AgentStatus } from '../../../modules/servers/agentic_signals/shared/types'
-import { zoomFitNode } from '../utils/zoomFocus'
 
 export type NodeType = 'terminal' | 'browser' | 'browserv2' | 'note' | 'files' | 'notion' | 'trello' | 'claude' | 'monaco' | 'orchestrator' | 'subagent' | 'windowpicker'
 
@@ -219,8 +218,6 @@ export const useNodeStore = create<NodeStore>((set, get) => ({
       nodes.set(id, node)
       return { ...syncBack(nodes, s), focusedNodeId: id }
     })
-    // Zoom to the new node after state settles
-    requestAnimationFrame(() => zoomFitNode(id))
     return node
   },
 
