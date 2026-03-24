@@ -1,6 +1,6 @@
 import React, { useRef } from 'react'
 import { Camera, screenToWorld } from '../stores/cameraStore'
-import { useNodeStore } from '../stores/nodeStore'
+import { useNodeStore, NodeType } from '../stores/nodeStore'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator
@@ -8,6 +8,7 @@ import {
 import { useCameraStore } from '../stores/cameraStore'
 import { fitAllNodes } from '../utils/canvasUtils'
 import { getActiveWorkspace } from '../stores/workspaceStore'
+import { zoomFitNode } from '../utils/zoomFocus'
 
 interface Props {
   camera: Camera
@@ -17,6 +18,11 @@ interface Props {
 export function CanvasContextMenu({ children }: Props): React.ReactElement {
   const { add } = useNodeStore()
   const clickWorldPos = useRef({ x: 0, y: 0 })
+
+  const addAndFocus = (type: NodeType, ox: number, oy: number, props?: Record<string, unknown>) => {
+    const node = add(type, clickWorldPos.current.x - ox, clickWorldPos.current.y - oy, props)
+    requestAnimationFrame(() => zoomFitNode(node.id))
+  }
 
   return (
     <ContextMenu>
@@ -31,40 +37,44 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
       <ContextMenuContent>
         <ContextMenuItem onClick={() => {
           const cwd = getActiveWorkspace()?.path || ''
-          add('terminal', clickWorldPos.current.x - 300, clickWorldPos.current.y - 200, { cwd })
+          addAndFocus('terminal', 300, 200, { cwd })
         }}>
           <span style={{ flex: 1 }}>New Terminal</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘T</span>
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => add('browser', clickWorldPos.current.x - 400, clickWorldPos.current.y - 300)}>
+        <ContextMenuItem onClick={() => addAndFocus('browser', 400, 300)}>
           <span style={{ flex: 1 }}>New Browser</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘B</span>
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => add('browserv2', clickWorldPos.current.x - 400, clickWorldPos.current.y - 300)}>
+        <ContextMenuItem onClick={() => addAndFocus('browserv2', 400, 300)}>
           New Browser V2
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => add('notion', clickWorldPos.current.x - 450, clickWorldPos.current.y - 350)}>
+        <ContextMenuItem onClick={() => addAndFocus('notion', 450, 350)}>
           New Notion
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => add('trello', clickWorldPos.current.x - 450, clickWorldPos.current.y - 350)}>
+        <ContextMenuItem onClick={() => addAndFocus('trello', 450, 350)}>
           New Trello
         </ContextMenuItem>
         <ContextMenuItem onClick={() => {
           const cwd = getActiveWorkspace()?.path || ''
-          add('claude', clickWorldPos.current.x - 350, clickWorldPos.current.y - 240, { cwd })
+          addAndFocus('claude', 350, 240, { cwd })
         }}>
           <span style={{ flex: 1 }}>New Claude</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘⇧C</span>
         </ContextMenuItem>
         <ContextMenuItem onClick={() => {
           const rootPath = getActiveWorkspace()?.path || ''
-          add('monaco', clickWorldPos.current.x - 500, clickWorldPos.current.y - 320, { rootPath })
+          addAndFocus('monaco', 500, 320, { rootPath })
         }}>
           <span style={{ flex: 1 }}>New Editor</span>
           <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘⇧E</span>
         </ContextMenuItem>
-        <ContextMenuItem onClick={() => add('note', clickWorldPos.current.x - 150, clickWorldPos.current.y - 100)}>
+        <ContextMenuItem onClick={() => addAndFocus('note', 150, 100)}>
           <span style={{ flex: 1 }}>New Note</span>
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => addAndFocus('windowpicker', 240, 200)}>
+          <span style={{ flex: 1 }}>New Window Picker</span>
+          <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘⇧W</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => fitAllNodes(useNodeStore.getState().nodes)}>

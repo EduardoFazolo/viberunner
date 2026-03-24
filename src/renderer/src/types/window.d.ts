@@ -145,6 +145,13 @@ declare global {
       installMcpGlobal: () => Promise<void>
     }
 
+    windowpicker: {
+      listWindows: () => Promise<Array<{ id: number; name: string; owner: string; pid: number }>>
+      getThumbnails: () => Promise<Array<{ id: number; thumbnail: string }>>
+      captureWindow: (windowId: number) => Promise<string | null>
+      focusWindow: (pid: number, owner: string) => Promise<void>
+    }
+
     notion: {
       fetchImage: (partition: string, imageUrl: string, blockId?: string) => Promise<string>
       fetchPage: (partition: string, pageId: string) => Promise<{

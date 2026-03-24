@@ -17,6 +17,7 @@ import { registerOrchestratorHandlers } from '../plugins/orchestrator/main/handl
 import { registerMaestroHandlers } from '../plugins/maestro/main/handlers'
 import { registerVoiceHandlers } from './voice'
 import { registerMcpHandlers } from './mcp'
+import { registerWindowPickerHandlers } from '../plugins/windowpicker/main/handlers'
 
 // Suppress noisy Chromium GPU/Skia internal errors that are benign in webview usage
 app.commandLine.appendSwitch('log-level', '3')
@@ -55,8 +56,25 @@ function createWindow(): void {
     void direction
   })
 
-  // Keyboard shortcuts are registered via Menu accelerators (see buildAppMenu below)
-  // so they work regardless of which webContents has focus (main renderer, WebContentsView, etc.).
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    // Use only meta (Cmd on macOS) so Ctrl+T/B/F/K/etc. pass through to terminals (readline shortcuts)
+    const mod = input.meta
+    if (mod && input.key === 't') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newTerminal') }
+    else if (mod && input.key === 'b') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newBrowser') }
+    else if (mod && input.key === 'f') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newFiles') }
+    else if (mod && input.key === '0') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'fitAll') }
+    else if (mod && input.key === 'k') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'search') }
+    else if (mod && (input.key === '=' || input.key === '+')) { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomIn') }
+    else if (mod && input.key === '-') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomOut') }
+    else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
+    else if (mod && input.shift && input.key === 'C') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newClaude') }
+    else if (mod && input.shift && input.key === 'E') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newEditor') }
+    else if (mod && input.shift && input.key === 'L') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newLovable') }
+    else if (mod && input.shift && input.key === 'W') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newWindowPicker') }
+    else if (mod && input.alt && input.key === 'i') { event.preventDefault(); mainWindow!.webContents.toggleDevTools() }
+
+  })
 
   // Kill all PTYs before the webContents is destroyed so onData never fires into a dead window
   mainWindow.on('close', () => {
@@ -164,6 +182,7 @@ app.whenReady().then(async () => {
   registerMaestroHandlers(ipcMain)
   registerVoiceHandlers(() => mainWindow?.webContents ?? null)
   registerMcpHandlers(() => mainWindow?.webContents ?? null)
+  registerWindowPickerHandlers(ipcMain)
 
   // Init tmux and clean up orphan sessions from deleted nodes
   await tmuxManager.init()
