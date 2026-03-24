@@ -32,7 +32,16 @@ var map: [String: [String: Any]] = [:]
 for w in list {
     guard let id = w[kCGWindowNumber as String] as? Int,
           let owner = w[kCGWindowOwnerName as String] as? String,
-          let pid = w[kCGWindowOwnerPID as String] as? Int else { continue }
+          let pid = w[kCGWindowOwnerPID as String] as? Int,
+          let layer = w[kCGWindowLayer as String] as? Int,
+          layer == 0 else { continue }
+
+    // Filter by minimum size — skip tiny system UI elements
+    let bounds = w[kCGWindowBounds as String] as? [String: Any] ?? [:]
+    let width = (bounds["Width"] as? Double) ?? 0
+    let height = (bounds["Height"] as? Double) ?? 0
+    if width < 100 || height < 100 { continue }
+
     let name = w[kCGWindowName as String] as? String ?? ""
     map[String(id)] = ["owner": owner, "pid": pid, "name": name]
 }
@@ -53,6 +62,7 @@ function ensureBinary(): string {
   const srcPath = join(cacheDir, 'windowinfo.swift')
   binaryPath = join(cacheDir, 'windowinfo')
 
+  // Always rewrite source and recompile (source is embedded, may change between builds)
   writeFileSync(srcPath, SWIFT_WINDOW_INFO)
   try {
     execSync(`swiftc -O -o "${binaryPath}" "${srcPath}" 2>&1`, { timeout: 60000 })
@@ -93,17 +103,28 @@ export function registerWindowPickerHandlers(ipc: IpcMainLike): void {
   ipc.handle('windowpicker:listWindows', async (): Promise<DesktopWindow[]> => {
     const infoMap = getWindowInfoMap()
 
-    // Deduplicate by owner: keep only the window with the longest name per process,
-    // unless the window has a real title (skip generic/internal windows like "Item-0")
+    const SYSTEM_OWNERS = new Set([
+      'Window Server',
+      'SystemUIServer',
+      'Control Center',
+      'Dock',
+      'Spotlight',
+      'NotificationCenter',
+      'WindowManager',
+      'TextInputMenuAgent',
+      'AirPlayUIAgent',
+      'universalAccessAuthWarn',
+      'loginwindow',
+      'ControlStrip',
+    ])
+
     const results: DesktopWindow[] = []
-    const seen = new Set<number>()
     for (const [id, info] of infoMap) {
       if (!info.owner) continue
+      if (SYSTEM_OWNERS.has(info.owner)) continue
       // Skip windows with no name or generic internal names
       if (!info.name) continue
       if (/^Item-\d+$/.test(info.name)) continue
-      if (seen.has(id)) continue
-      seen.add(id)
 
       results.push({
         id,
