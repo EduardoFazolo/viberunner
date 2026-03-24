@@ -93,12 +93,21 @@ export function registerWindowPickerHandlers(ipc: IpcMainLike): void {
   ipc.handle('windowpicker:listWindows', async (): Promise<DesktopWindow[]> => {
     const infoMap = getWindowInfoMap()
 
+    // Deduplicate by owner: keep only the window with the longest name per process,
+    // unless the window has a real title (skip generic/internal windows like "Item-0")
     const results: DesktopWindow[] = []
+    const seen = new Set<number>()
     for (const [id, info] of infoMap) {
-      if (!info.name && !info.owner) continue
+      if (!info.owner) continue
+      // Skip windows with no name or generic internal names
+      if (!info.name) continue
+      if (/^Item-\d+$/.test(info.name)) continue
+      if (seen.has(id)) continue
+      seen.add(id)
+
       results.push({
         id,
-        name: info.name || 'Untitled',
+        name: info.name,
         owner: info.owner,
         pid: info.pid
       })

@@ -139,14 +139,6 @@ export function WindowPickerNode({ node }: { node: NodeData }): React.ReactEleme
     return w.name.toLowerCase().includes(q) || w.owner.toLowerCase().includes(q)
   })
 
-  // Group by owner
-  const grouped = new Map<string, DesktopWindow[]>()
-  for (const w of filtered) {
-    const key = w.owner || 'Unknown'
-    if (!grouped.has(key)) grouped.set(key, [])
-    grouped.get(key)!.push(w)
-  }
-
   if (picking) {
     return (
       <BaseNode node={node}>
@@ -223,97 +215,93 @@ export function WindowPickerNode({ node }: { node: NodeData }): React.ReactEleme
             )}
 
             {!loading &&
-              Array.from(grouped.entries()).map(([owner, wins]) => (
-                <div key={owner} style={{ marginBottom: 8 }}>
-                  <div
+              filtered.map((w) => {
+                const thumb = thumbnails.get(w.id)
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => selectWindow(w)}
                     style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color: 'rgba(167,139,250,0.7)',
-                      padding: '4px 6px 2px',
-                      letterSpacing: '0.05em',
-                      textTransform: 'uppercase'
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      width: '100%',
+                      padding: '6px 8px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderRadius: 5,
+                      color: 'rgba(255,255,255,0.8)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      fontFamily: 'inherit',
+                      transition: 'background 0.1s'
                     }}
+                    onMouseOver={(e) =>
+                      (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')
+                    }
+                    onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    {owner}
-                  </div>
-                  {wins.map((w) => {
-                    const thumb = thumbnails.get(w.id)
-                    return (
-                      <button
-                        key={w.id}
-                        onClick={() => selectWindow(w)}
+                    {thumb ? (
+                      <img
+                        src={thumb}
+                        alt=""
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          width: '100%',
-                          padding: '6px 8px',
-                          background: 'transparent',
-                          border: 'none',
-                          borderRadius: 5,
-                          color: 'rgba(255,255,255,0.8)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          fontSize: 12,
-                          fontFamily: 'inherit',
-                          transition: 'background 0.1s'
+                          width: 80,
+                          height: 60,
+                          objectFit: 'cover',
+                          borderRadius: 4,
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          flexShrink: 0
                         }}
-                        onMouseOver={(e) =>
-                          (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')
-                        }
-                        onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        {thumb ? (
-                          <img
-                            src={thumb}
-                            alt=""
-                            style={{
-                              width: 80,
-                              height: 60,
-                              objectFit: 'cover',
-                              borderRadius: 4,
-                              border: '1px solid rgba(255,255,255,0.08)',
-                              flexShrink: 0
-                            }}
+                      />
+                    ) : (
+                      <div style={THUMB_PLACEHOLDER}>
+                        <svg
+                          width="20"
+                          height="16"
+                          viewBox="0 0 20 16"
+                          fill="none"
+                          style={{ opacity: 0.4 }}
+                        >
+                          <rect
+                            x="1"
+                            y="1"
+                            width="18"
+                            height="14"
+                            rx="2"
+                            stroke="currentColor"
+                            strokeWidth="1.2"
                           />
-                        ) : (
-                          <div style={THUMB_PLACEHOLDER}>
-                            <svg
-                              width="20"
-                              height="16"
-                              viewBox="0 0 20 16"
-                              fill="none"
-                              style={{ opacity: 0.4 }}
-                            >
-                              <rect
-                                x="1"
-                                y="1"
-                                width="18"
-                                height="14"
-                                rx="2"
-                                stroke="currentColor"
-                                strokeWidth="1.2"
-                              />
-                              <path d="M1 4h18" stroke="currentColor" strokeWidth="1.2" />
-                            </svg>
-                          </div>
-                        )}
-                        <span
+                          <path d="M1 4h18" stroke="currentColor" strokeWidth="1.2" />
+                        </svg>
+                      </div>
+                    )}
+                    <div style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}>
+                      <div
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {w.name || 'Untitled Window'}
+                      </div>
+                      {w.owner && (
+                        <div
                           style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            flex: 1
+                            fontSize: 10,
+                            color: 'rgba(167,139,250,0.6)',
+                            marginTop: 1
                           }}
                         >
-                          {w.name || 'Untitled Window'}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
+                          {w.owner}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
           </div>
 
           {/* Refresh / Cancel */}
