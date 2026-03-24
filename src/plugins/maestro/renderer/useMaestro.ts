@@ -174,10 +174,14 @@ function isOpenPalm(lms: HandLandmark[]): boolean {
   return true
 }
 
-/** Simple binary: pinching or not. */
-type HandPose = 'open' | 'pinch'
+/** Pose: fist is distinguished from pinch so closing your hand stops a drag. */
+type HandPose = 'open' | 'pinch' | 'fist'
 function classifyPose(lms: HandLandmark[]): HandPose {
-  return isPinching(lms) ? 'pinch' : 'open'
+  // Check fist BEFORE pinch — a closed fist has thumb/index close together
+  // which looks like a pinch, but the other fingers are curled too.
+  if (isFist(lms)) return 'fist'
+  if (isPinching(lms)) return 'pinch'
+  return 'open'
 }
 
 /**
@@ -542,7 +546,7 @@ export function useMaestro(): MaestroState {
 
     // ── PINCHING: cursor follows index finger, deciding click vs drag ──
     if (phase === 'pinching') {
-      if (pose === 'open') {
+      if (pose === 'open' || pose === 'fist') {
         // Pinch released → move cursor to final position, then click
         const pos = currentNormRef.current
         if (pos) {
@@ -581,8 +585,8 @@ export function useMaestro(): MaestroState {
     // Uses confidence-based exit: confidence decays when pinch not detected,
     // only exits after confidence stays below threshold for sustained period.
     if (phase === 'dragging') {
-      // Debounced pose says open → intentional release, stop immediately
-      if (pose === 'open') {
+      // Debounced pose says open or fist → intentional release, stop immediately
+      if (pose === 'open' || pose === 'fist') {
         void window.maestro.mouseToggle(false, 'left')
         dragConfidenceRef.current = 1
         softStopSinceRef.current = 0
