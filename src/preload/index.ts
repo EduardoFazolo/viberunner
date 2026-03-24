@@ -271,6 +271,55 @@ contextBridge.exposeInMainWorld('lovable', {
     ipcRenderer.invoke('lovable:install-mcp-global'),
 })
 
+contextBridge.exposeInMainWorld('mcp', {
+  getTools: (): Promise<unknown[]> =>
+    ipcRenderer.invoke('mcp:getTools'),
+
+  execute: (name: string, input: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error?: string }> =>
+    ipcRenderer.invoke('mcp:execute', name, input),
+
+  // Listen for write actions dispatched from main → renderer
+  onAction: (cb: (msg: { id: number; action: string; params: Record<string, unknown> }) => void): (() => void) => {
+    const listener = (_: unknown, msg: { id: number; action: string; params: Record<string, unknown> }) => cb(msg)
+    ipcRenderer.on('mcp:action', listener)
+    return () => ipcRenderer.removeListener('mcp:action', listener)
+  },
+
+  // Respond to a write action
+  respond: (id: number, result: unknown): void => {
+    ipcRenderer.send(`mcp:result:${id}`, result)
+  },
+})
+
+contextBridge.exposeInMainWorld('voice', {
+  checkHandy: (): Promise<boolean> =>
+    ipcRenderer.invoke('voice:checkHandy'),
+
+  installHandy: (): Promise<void> =>
+    ipcRenderer.invoke('voice:installHandy'),
+
+  setup: (): Promise<{ bridgeScriptPath: string }> =>
+    ipcRenderer.invoke('voice:setup'),
+
+  toggle: (): Promise<void> =>
+    ipcRenderer.invoke('voice:toggle'),
+
+  onTranscript: (cb: (text: string) => void): (() => void) => {
+    const listener = (_: unknown, text: string) => cb(text)
+    ipcRenderer.on('voice:transcript', listener)
+    return () => ipcRenderer.removeListener('voice:transcript', listener)
+  },
+
+  runAgent: (transcript: string): Promise<string | null> =>
+    ipcRenderer.invoke('voice:runAgent', transcript),
+
+  onAgentStatus: (cb: (status: { state: string; message?: string }) => void): (() => void) => {
+    const listener = (_: unknown, status: { state: string; message?: string }) => cb(status)
+    ipcRenderer.on('voice:agentStatus', listener)
+    return () => ipcRenderer.removeListener('voice:agentStatus', listener)
+  },
+})
+
 contextBridge.exposeInMainWorld('orchestrator', {
   start: (orchestratorId: string, payload: OrchestratorStartPayload): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('orchestrator:start', orchestratorId, payload),

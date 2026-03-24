@@ -12,6 +12,7 @@ import { ClusterLayer } from '../../../plugins/orchestrator/renderer/ClusterLaye
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { createNotionNoteFromDrop, NotionCanvasDropPayload } from '../../../plugins/notion/utils/notionDrag'
 import { plugins } from '../../../plugins'
+import { VoiceIndicator } from './VoiceIndicator'
 
 export function Canvas(): React.ReactElement {
   const { camera, pan, zoomAt } = useCameraStore()
@@ -288,6 +289,7 @@ export function Canvas(): React.ReactElement {
         )}
       </div>
       {plugins.map((p) => p.CanvasMount ? <p.CanvasMount key={p.id} /> : null)}
+      <VoiceIndicator />
     </CanvasContextMenu>
   )
 }

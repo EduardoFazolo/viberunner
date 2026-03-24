@@ -63,6 +63,13 @@ interface BrowserCaptureAndHideResult {
 
 declare global {
   interface Window {
+    mcp: {
+      getTools: () => Promise<unknown[]>
+      execute: (name: string, input: Record<string, unknown>) => Promise<{ ok: boolean; result?: unknown; error?: string }>
+      onAction: (cb: (msg: { id: number; action: string; params: Record<string, unknown> }) => void) => () => void
+      respond: (id: number, result: unknown) => void
+    }
+
     terminal: {
       create: (id: string, workspaceId: string, cwd: string, shell: string) => Promise<void>
       write: (id: string, data: string) => void
@@ -108,6 +115,16 @@ declare global {
       canvasWebviewPreloadPath: () => Promise<string>
       getCursorPos: () => Promise<{ x: number; y: number }>
       openExternal: (url: string) => Promise<void>
+    }
+
+    voice: {
+      checkHandy: () => Promise<boolean>
+      installHandy: () => Promise<void>
+      setup: () => Promise<{ bridgeScriptPath: string }>
+      toggle: () => Promise<void>
+      onTranscript: (cb: (text: string) => void) => () => void
+      runAgent: (transcript: string) => Promise<string | null>
+      onAgentStatus: (cb: (status: { state: string; message?: string }) => void) => () => void
     }
 
     orchestrator: {

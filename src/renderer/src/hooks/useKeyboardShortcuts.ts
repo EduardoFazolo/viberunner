@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
+import { useVoiceStore } from '../stores/voiceStore'
 import { fitAllNodes } from '../utils/canvasUtils'
 import { notifyCanvasInteractionEnd, notifyCanvasInteractionStart } from '../utils/canvasInteraction'
 import { getActiveWorkspace } from '../stores/workspaceStore'
@@ -92,6 +93,22 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
         case 'settings':
           onSettings()
           break
+        case 'voiceDictate':
+        case 'voiceCommand': {
+          const voice = useVoiceStore.getState()
+          const wasRecording = voice.recording
+          const mode = name === 'voiceDictate' ? 'dictate' : 'command'
+          if (wasRecording) {
+            voice.stopRecording()
+          } else {
+            voice.startRecording(mode)
+          }
+          window.voice?.toggle().catch(() => {
+            if (wasRecording) voice.startRecording(mode)
+            else voice.stopRecording()
+          })
+          break
+        }
       }
     })
     return unsub

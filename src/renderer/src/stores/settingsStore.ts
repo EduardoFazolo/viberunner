@@ -4,12 +4,18 @@ export interface Settings {
   shell: string                          // default shell for new terminals (empty = use system default)
   fontSize: number                       // xterm.js font size
   navStyle: 'default' | 'trackpad'      // canvas navigation style
+  voiceApiKey: string                    // API key for voice commands agent
+  voiceBaseUrl: string                   // OpenAI-compatible base URL
+  voiceModel: string                     // model ID
 }
 
 const DEFAULTS: Settings = {
   shell: '',
   fontSize: 13,
   navStyle: 'default',
+  voiceApiKey: '',
+  voiceBaseUrl: 'https://api.moonshot.ai/v1',
+  voiceModel: 'kimi-k2-turbo-preview',
 }
 
 interface SettingsStore {

@@ -15,6 +15,8 @@ import { registerGitHandlers } from '../plugins/monaco/main/gitHandlers'
 import { registerLovableHandlers } from '../plugins/lovable/main/handlers'
 import { registerOrchestratorHandlers } from '../plugins/orchestrator/main/handlers'
 import { registerMaestroHandlers } from '../plugins/maestro/main/handlers'
+import { registerVoiceHandlers } from './voice'
+import { registerMcpHandlers } from './mcp'
 
 // Suppress noisy Chromium GPU/Skia internal errors that are benign in webview usage
 app.commandLine.appendSwitch('log-level', '3')
@@ -53,24 +55,8 @@ function createWindow(): void {
     void direction
   })
 
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown') return
-    // Use only meta (Cmd on macOS) so Ctrl+T/B/F/K/etc. pass through to terminals (readline shortcuts)
-    const mod = input.meta
-    if (mod && input.key === 't') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newTerminal') }
-    else if (mod && input.key === 'b') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newBrowser') }
-    else if (mod && input.key === 'f') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newFiles') }
-    else if (mod && input.key === '0') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'fitAll') }
-    else if (mod && input.key === 'k') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'search') }
-    else if (mod && (input.key === '=' || input.key === '+')) { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomIn') }
-    else if (mod && input.key === '-') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'zoomOut') }
-    else if (mod && input.key === ',') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'settings') }
-    else if (mod && input.shift && input.key === 'C') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newClaude') }
-    else if (mod && input.shift && input.key === 'E') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newEditor') }
-    else if (mod && input.shift && input.key === 'L') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newLovable') }
-    else if (mod && input.alt && input.key === 'i') { event.preventDefault(); mainWindow!.webContents.toggleDevTools() }
-
-  })
+  // Keyboard shortcuts are registered via Menu accelerators (see buildAppMenu below)
+  // so they work regardless of which webContents has focus (main renderer, WebContentsView, etc.).
 
   // Kill all PTYs before the webContents is destroyed so onData never fires into a dead window
   mainWindow.on('close', () => {
@@ -114,22 +100,52 @@ function createWindow(): void {
   })
 }
 
-// Minimal application menu that restores native Cmd+C/V/X/A/Z clipboard shortcuts.
-// Without this, Electron apps with autoHideMenuBar lose the Edit role bindings.
-Menu.setApplicationMenu(Menu.buildFromTemplate([
-  { label: app.name, submenu: [{ role: 'quit' }] },
-  {
-    label: 'Edit', submenu: [
-      { role: 'undo' },
-      { role: 'redo' },
-      { type: 'separator' },
-      { role: 'cut' },
-      { role: 'copy' },
-      { role: 'paste' },
-      { role: 'selectAll' },
-    ],
-  },
-]))
+// Application menu with accelerators for all app shortcuts.
+// Menu accelerators are handled at the OS/window level — they work regardless of
+// which webContents has focus (main renderer, WebContentsView, webview, etc.).
+function buildAppMenu(): void {
+  const send = (name: string) => () => mainWindow?.webContents.send('shortcut', name)
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: app.name, submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }] },
+    {
+      label: 'Edit', submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'Canvas', submenu: [
+        { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: send('newTerminal') },
+        { label: 'New Browser', accelerator: 'CmdOrCtrl+B', click: send('newBrowser') },
+        { label: 'New Files', accelerator: 'CmdOrCtrl+F', click: send('newFiles') },
+        { label: 'New Claude', accelerator: 'CmdOrCtrl+Shift+C', click: send('newClaude') },
+        { label: 'New Editor', accelerator: 'CmdOrCtrl+Shift+E', click: send('newEditor') },
+        { label: 'New Lovable', accelerator: 'CmdOrCtrl+Shift+L', click: send('newLovable') },
+        { type: 'separator' },
+        { label: 'Fit All', accelerator: 'CmdOrCtrl+0', click: send('fitAll') },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: send('zoomIn') },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: send('zoomOut') },
+        { type: 'separator' },
+        { label: 'Search', accelerator: 'CmdOrCtrl+K', click: send('search') },
+        { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: send('settings') },
+        { label: 'Voice Dictate', accelerator: 'CmdOrCtrl+Shift+V', click: send('voiceDictate') },
+        { label: 'Voice Command', accelerator: 'CmdOrCtrl+Shift+M', click: send('voiceCommand') },
+      ],
+    },
+    {
+      label: 'View', submenu: [
+        { label: 'Toggle DevTools', accelerator: 'CmdOrCtrl+Shift+I', click: () => mainWindow?.webContents.toggleDevTools() },
+        { label: 'Toggle DevTools (Alt)', accelerator: 'CmdOrCtrl+Alt+I', click: () => mainWindow?.webContents.toggleDevTools() },
+      ],
+    },
+  ]))
+}
 
 app.whenReady().then(async () => {
   try {
@@ -146,6 +162,8 @@ app.whenReady().then(async () => {
   registerLovableHandlers(ipcMain)
   registerOrchestratorHandlers(ipcMain, () => mainWindow?.webContents ?? null)
   registerMaestroHandlers(ipcMain)
+  registerVoiceHandlers(() => mainWindow?.webContents ?? null)
+  registerMcpHandlers(() => mainWindow?.webContents ?? null)
 
   // Init tmux and clean up orphan sessions from deleted nodes
   await tmuxManager.init()
@@ -155,8 +173,12 @@ app.whenReady().then(async () => {
   setupBrowserSession(session.fromPartition('persist:canvaflow-ws-default'))
 
   createWindow()
+  buildAppMenu()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow()
+      buildAppMenu()
+    }
   })
 })
 
