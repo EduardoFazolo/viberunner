@@ -1,20 +1,36 @@
 /**
- * useMaestro — hand gesture navigation hook
+ * useMaestro — hand-as-mouse control hook (system cursor)
  *
- * Gesture → action mapping:
- *   Closed_Fist                           → pan (grab and drag)
- *   Open_Palm + palm toward camera        → zoom IN continuously
- *   Open_Palm / None + back toward camera → zoom OUT continuously
- *   Pinch (thumb+index tips close) 1s    → focus / zoomFitNode on node under hand
- *   Clap (both hands close)              → switch active controlling hand
+ * Toggle:    Two high-up claps (both arms raised) → enable/disable gesture mode
+ * Right hand = system mouse cursor:
+ *   Open hand             → idle (cursor stays still)
+ *   Pinch (thumb+index)   → cursor snaps to pinch point
+ *     release quickly     → left click
+ *     hold past threshold → canvas drag (pan), release = stop drag
+ *   Double pinch (800ms)  → right click
+ *
+ * Buffer: once in pinch/drag mode, only exit when hand is fully open
+ * (a closed fist does NOT break out — must open hand).
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { GestureRecognizer, GestureRecognizerResult } from '@mediapipe/tasks-vision'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
-import { useNodeStore } from '../../../renderer/src/stores/nodeStore'
 import { useMaestroStore } from '../maestroStore'
-import { zoomFitNode } from '../../../renderer/src/utils/zoomFocus'
+
+// ─── Preload bridge type ─────────────────────────────────────────────────────
+
+declare global {
+  interface Window {
+    maestro: {
+      mouseMove(x: number, y: number): Promise<void>
+      mouseClick(button?: string): Promise<void>
+      mouseToggle(down: boolean, button?: string): Promise<void>
+      getMousePos(): Promise<{ x: number; y: number }>
+      keyToggle(key: string, down: boolean): Promise<void>
+    }
+  }
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -22,29 +38,32 @@ const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.33/w
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task'
 
-const CLAP_THRESHOLD    = 0.18    // normalized palm-center distance for clap
-const CLAP_COOLDOWN_MS  = 1500
-const PAN_SENSITIVITY   = 1.4
-const ZOOM_IN_DELTA     = -32     // passed to zoomAt (negative = zoom in)
-const ZOOM_OUT_DELTA    = 32
-
-/**
- * Consecutive frames the same zoom gesture must be held before zoom starts.
- * At ~60fps this is ~200ms — enough to filter out accidental/transitional poses.
- */
-const ZOOM_STABLE_FRAMES = 3
-
-
-/** Thumb-tip (lm4) to index-tip (lm8) distance threshold for pinch. */
-const PINCH_THRESHOLD        = 0.06
-/** Min wrist-to-tip distance for a finger to count as "extended". */
-const FINGER_EXTENDED_MIN    = 0.15
-/** Max ms between first-pinch release and second pinch to register double-pinch. */
-const DOUBLE_PINCH_WINDOW_MS = 850
-/** How long (ms) the second pinch must be held to trigger focus. */
-const PINCH_DWELL_MS         = 1000
-/** Cooldown after a successful focus to prevent re-triggering. */
-const FOCUS_COOLDOWN_MS      = 1000
+/** ms both open palms must be held to toggle. */
+const TOGGLE_HOLD_MS = 1500
+/** Minimum ms between toggles. */
+const TOGGLE_COOLDOWN_MS = 2000
+/** ms the pinch must be held before transitioning to drag (system mouse down). */
+const DRAG_THRESHOLD_MS = 300
+/** Consecutive frames needed to confirm pinch START. */
+const PINCH_CONFIRM_FRAMES = 2
+/** Per-frame confidence decay when pinch is NOT detected during drag. */
+const DRAG_CONFIDENCE_DECAY = 0.03
+/** Below this → drag stops immediately. */
+const DRAG_CONFIDENCE_HARD_STOP = 0.80
+/** Between HARD_STOP and this → drag stops after 500ms delay. */
+const DRAG_CONFIDENCE_SOFT_STOP = 0.90
+/** Above this → considered fully confident, resets any pending soft-stop timer. */
+const DRAG_CONFIDENCE_RECOVER = 0.96
+/** ms in the soft-stop zone before drag ends. */
+const DRAG_SOFT_STOP_MS = 500
+/** Interpolation speed per 60fps frame (0 = instant, 1 = never). Lower = faster tracking. */
+const CURSOR_LERP = 0.15
+/** Thumb-tip (lm4) to index-tip (lm8) distance threshold for pinch START, relative to palm size. */
+const PINCH_THRESHOLD = 0.28
+/** Wider threshold used during drag — fingers can separate more during fast movement. */
+const PINCH_THRESHOLD_DRAG = 0.50
+/** Zoom sensitivity: multiplier for vertical hand movement → zoom delta. */
+const ZOOM_SENSITIVITY = 3.0
 
 const PALM_LM = [0, 5, 9, 13, 17]
 
@@ -60,7 +79,7 @@ export const HAND_CONNECTIONS: [number, number][] = [
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type MaestroStatus = 'off' | 'loading' | 'ready' | 'error'
-export type MaestroMode   = 'idle' | 'pan' | 'zoom-in' | 'zoom-out' | 'pinching'
+export type MaestroMode = 'disabled' | 'idle' | 'moving' | 'clicking' | 'dragging' | 'zooming'
 
 export interface HandLandmark { x: number; y: number; z: number }
 
@@ -72,26 +91,12 @@ export interface DetectedHand {
   index: number
 }
 
-export interface PinchState {
-  /**
-   * 'primed'          — first pinch detected, waiting for release
-   * 'awaiting-second' — released after first pinch, window open for second pinch
-   * 'dwelling'        — second pinch held, arc filling toward focus
-   */
-  phase: 'primed' | 'awaiting-second' | 'dwelling'
-  /** Progress 0–1, only meaningful in 'dwelling' phase. */
-  progress: number
-  screenX: number
-  screenY: number
-  nodeId: string | null
-}
-
 export interface MaestroState {
   status: MaestroStatus
   mode: MaestroMode
+  gesturesActive: boolean
   hands: DetectedHand[]
-  activeHandIndex: number | null
-  pinch: PinchState | null
+  mousePos: { x: number; y: number } | null
   videoRef: React.RefObject<HTMLVideoElement>
   connections: typeof HAND_CONNECTIONS
 }
@@ -109,192 +114,152 @@ function dist2D(a: HandLandmark, b: HandLandmark): number {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+function dist3D(a: HandLandmark, b: HandLandmark): number {
+  const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z ?? 0) - (b.z ?? 0)
+  return Math.sqrt(dx * dx + dy * dy + dz * dz)
+}
+
 function distXY(a: { x: number; y: number }, b: { x: number; y: number }): number {
   const dx = a.x - b.x, dy = a.y - b.y
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-/**
- * Palm size in normalized image coordinates = dist(wrist, middle-finger MCP).
- * Used to normalize all finger-extension thresholds so they are distance-independent
- * (the hand appearing small in the frame doesn't break the detection).
- */
+/** Palm size = dist(wrist, middle-finger MCP). Normalizes thresholds across distances. */
 function palmSize(lms: HandLandmark[]): number {
   return dist2D(lms[0], lms[9])
 }
 
-/**
- * "L" gesture — index finger up + thumb extended sideways, other three fingers curled.
- * Resembles the letter L and signals "expand / zoom in".
- *
- * All thresholds are relative to palmSize() so they work at any camera distance.
- */
-function isLGesture(lms: HandLandmark[]): boolean {
-  const ps = palmSize(lms)
-  if (ps < 0.01) return false   // hand not visible / too small
-
-  // Index must be extended: tip clearly above its MCP
-  const indexExtended = dist2D(lms[8], lms[5]) > ps * 0.65
-
-  // Thumb must be extended outward: tip far from index MCP
-  const thumbExtended = dist2D(lms[4], lms[5]) > ps * 0.70
-
-  // Middle, ring, pinky must be curled: tip close to their own MCP
-  const middleCurled = dist2D(lms[12], lms[9])  < ps * 0.55
-  const ringCurled   = dist2D(lms[16], lms[13]) < ps * 0.55
-  const pinkyCurled  = dist2D(lms[20], lms[17]) < ps * 0.55
-
-  return indexExtended && thumbExtended && middleCurled && ringCurled && pinkyCurled
-}
-
-/**
- * "Closed pinch" gesture — thumb tip and index tip touching while the
- * remaining three fingers are curled (not extended).
- *
- * This is the palm-relative complement to detectPinchPoint (which requires
- * the other fingers to be extended).  Both map to zoom-out.
- */
-function isClosedPinchGesture(lms: HandLandmark[]): boolean {
+/** Pinch = thumb tip (lm4) touching index tip (lm8), normalized by palm size.
+ *  Uses 3D distance so tilted hands are detected more reliably. */
+function isPinching(lms: HandLandmark[]): boolean {
   const ps = palmSize(lms)
   if (ps < 0.01) return false
-
-  // Thumb and index must be touching (palm-size normalised)
-  if (dist2D(lms[4], lms[8]) >= ps * 0.55) return false
-
-  // At least 2 of the 3 remaining fingers must be curled
-  const middleCurled = dist2D(lms[12], lms[9])  < ps * 0.65
-  const ringCurled   = dist2D(lms[16], lms[13]) < ps * 0.65
-  const pinkyCurled  = dist2D(lms[20], lms[17]) < ps * 0.65
-  const curledCount  = [middleCurled, ringCurled, pinkyCurled].filter(Boolean).length
-  return curledCount >= 2
+  return dist3D(lms[4], lms[8]) < ps * PINCH_THRESHOLD
 }
 
-/**
- * "Bunch / gather" gesture — all 5 fingertips clustered close together,
- * like pinching a small marble. Signals "compress / zoom out".
- *
- * Checks that every fingertip is within a palm-relative radius of the centroid.
- */
-function isBunchGesture(lms: HandLandmark[]): boolean {
+/** Wider pinch check used during drag — tolerates more finger separation during fast movement. */
+function isPinchingDrag(lms: HandLandmark[]): boolean {
   const ps = palmSize(lms)
   if (ps < 0.01) return false
+  return dist3D(lms[4], lms[8]) < ps * PINCH_THRESHOLD_DRAG
+}
 
-  const tips = [4, 8, 12, 16, 20]
-  let cx = 0, cy = 0
-  for (const t of tips) { cx += lms[t].x; cy += lms[t].y }
-  cx /= 5; cy /= 5
+/** Midpoint between thumb tip and index tip in normalized coordinates. */
+function pinchPoint(lms: HandLandmark[]): { x: number; y: number } {
+  return { x: (lms[4].x + lms[8].x) / 2, y: (lms[4].y + lms[8].y) / 2 }
+}
 
-  const maxAllowed = ps * 0.45
-  for (const t of tips) {
-    const dx = lms[t].x - cx, dy = lms[t].y - cy
-    if (Math.sqrt(dx * dx + dy * dy) > maxAllowed) return false
+/** Fist = at least 3 of 4 non-thumb fingers curled toward wrist. */
+function isFist(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+  let curled = 0
+  for (const t of [8, 12, 16, 20]) {
+    if (dist2D(lms[t], lms[0]) < ps * 1.3) curled++
   }
+  return curled >= 3
+}
+
+/** All 5 fingers extended = open palm. Used for toggle detection. */
+function isOpenPalm(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+  // All 4 non-thumb fingertips must be far from wrist
+  const tips = [8, 12, 16, 20]
+  for (const t of tips) {
+    if (dist2D(lms[t], lms[0]) < ps * 1.4) return false
+  }
+  // Thumb tip must be far from index MCP (extended outward)
+  if (dist2D(lms[4], lms[5]) < ps * 0.5) return false
   return true
 }
 
-/**
- * Returns the pinch midpoint in screen space (mirrored x), or null if not pinching.
- *
- * Strict pinch = thumb tip (lm4) and index tip (lm8) touching AND middle (lm12),
- * ring (lm16), and pinky (lm20) all clearly extended upward.  This matches the
- * gesture in the screenshot and rules out fists and loose half-curled hands.
- */
-function detectPinchPoint(lms: HandLandmark[], vw: number, vh: number): { x: number; y: number } | null {
-  if (dist2D(lms[4], lms[8]) >= PINCH_THRESHOLD) return null
-
-  // All three remaining fingers must be extended
-  const w = lms[0]
-  for (const tip of [12, 16, 20]) {
-    const dx = lms[tip].x - w.x, dy = lms[tip].y - w.y
-    if (Math.sqrt(dx * dx + dy * dy) < FINGER_EXTENDED_MIN) return null
-  }
-
-  const mx = (lms[4].x + lms[8].x) / 2
-  const my = (lms[4].y + lms[8].y) / 2
-  return { x: (1 - mx) * vw, y: my * vh }
+/** Simple binary: pinching or not. */
+type HandPose = 'open' | 'pinch'
+function classifyPose(lms: HandLandmark[]): HandPose {
+  return isPinching(lms) ? 'pinch' : 'open'
 }
 
-/** Hit-test world nodes at a window-space coordinate; returns the topmost node id. */
-function hitTestNode(windowX: number, windowY: number): string | null {
-  // Mirror the same transform Canvas.tsx uses for double-tap hit-testing:
-  // subtract the canvas element's client rect before applying the camera offset.
-  const canvasEl = document.getElementById('canvas-viewport')
-  const rect = canvasEl?.getBoundingClientRect() ?? { left: 0, top: 0 }
-
-  const { camera } = useCameraStore.getState()
-  const { nodes }  = useNodeStore.getState()
-
-  const localX = windowX - rect.left
-  const localY = windowY - rect.top
-  const wx = (localX - camera.x) / camera.zoom
-  const wy = (localY - camera.y) / camera.zoom
-
-  let hitId: string | null = null
-  let maxZ = -Infinity
-  for (const node of nodes.values()) {
-    if (wx >= node.x && wx <= node.x + node.width &&
-        wy >= node.y && wy <= node.y + node.height &&
-        node.zIndex > maxZ) {
-      maxZ = node.zIndex
-      hitId = node.id
-    }
-  }
-  return hitId
+/**
+ * Convert webcam-normalized coordinates to absolute screen coordinates.
+ * Maps the hand position to the Electron window's content area on screen.
+ */
+function toScreenCoords(normX: number, normY: number): { absX: number; absY: number; winX: number; winY: number } {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const winX = (1 - normX) * vw
+  const winY = normY * vh
+  const titleBarH = window.outerHeight - window.innerHeight
+  const absX = window.screenX + winX
+  const absY = window.screenY + titleBarH + winY
+  return { absX, absY, winX, winY }
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useMaestro(): MaestroState {
   const maestroEnabled = useMaestroStore((s) => s.settings.enabled)
-  const { pan, zoomAt } = useCameraStore()
+  const { zoomAt } = useCameraStore()
 
-  const [status,          setStatus]          = useState<MaestroStatus>('off')
-  const [mode,            setMode]            = useState<MaestroMode>('idle')
-  const [hands,           setHands]           = useState<DetectedHand[]>([])
-  const [activeHandIndex, setActiveHandIndex] = useState<number | null>(null)
-  const [pinch,           setPinch]           = useState<PinchState | null>(null)
+  const [status, setStatus]               = useState<MaestroStatus>('off')
+  const [mode, setMode]                   = useState<MaestroMode>('disabled')
+  const [hands, setHands]                 = useState<DetectedHand[]>([])
+  const [gesturesActive, setGesturesActive] = useState(false)
+  const [mousePos, setMousePos]           = useState<{ x: number; y: number } | null>(null)
 
   const videoRef      = useRef<HTMLVideoElement>(null)
   const recognizerRef = useRef<GestureRecognizer | null>(null)
   const rafRef        = useRef<number | null>(null)
   const streamRef     = useRef<MediaStream | null>(null)
 
-  const prevPalmRef         = useRef<{ x: number; y: number } | null>(null)
-  const activeHandednessRef = useRef<'Left' | 'Right' | null>(null)
-  const lastClapRef         = useRef<number>(0)
-  const wasClappingRef      = useRef<boolean>(false)
+  // ── Toggle (both open palms held) ──────────────────────────────────────
+  const gesturesActiveRef   = useRef(false)
+  const lastToggleRef       = useRef(0)
+  const bothOpenSinceRef    = useRef(0)
 
-  // Double-pinch state machine
-  type PinchPhase = 'idle' | 'primed' | 'awaiting-second' | 'dwelling'
-  const pinchPhaseRef     = useRef<PinchPhase>('idle')
-  const pinchPhaseTimeRef = useRef<number>(0)   // when current phase started
-  const pinchNodeRef      = useRef<string | null>(null)
-  const lastFocusRef      = useRef<number>(0)
+  // ── Mouse state machine ───────────────────────────────────────────────
+  // idle     → hand open or not pinching, cursor stays still
+  // pinching → thumb+index touching, cursor at pinch point, waiting for click-vs-drag
+  // dragging → pinch held past threshold, canvas panning via delta
+  //
+  // Buffer: pinching/dragging only exit on 'open' (not on 'other'/fist)
+  type MousePhase = 'idle' | 'pinching' | 'dragging'
+  const mousePhaseRef      = useRef<MousePhase>('idle')
+  const pinchStartRef      = useRef(0)
+  // Target position (set by MediaPipe at its rate) and current interpolated position
+  const targetNormRef      = useRef<{ x: number; y: number } | null>(null)
+  const currentNormRef     = useRef<{ x: number; y: number } | null>(null)
+  const velocityRef        = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
+  const cursorRafRef       = useRef<number | null>(null)
+  // ── Left fist = Cmd modifier ────────────────────────────────────────
+  const cmdActiveRef       = useRef(false)
+  // ── Cmd+scroll zoom (left fist + right open palm vertical movement) ──
+  const prevZoomYRef       = useRef<number | null>(null)
+  // ── Drag confidence (prevents noisy mid-drag drops) ───────────────────
+  const dragConfidenceRef     = useRef(1)
+  const softStopSinceRef     = useRef(0)
 
-  /**
-   * Zoom gesture stability buffer.
-   * Tracks how many consecutive frames the current zoom intent has been held.
-   * Resets to 0 whenever the gesture or orientation changes.
-   */
-  const zoomStableRef = useRef<{ zoomIn: boolean; frames: number; active: boolean }>({
-    zoomIn: false, frames: 0, active: false,
-  })
+  // ── Hand pose confirmation (debounce noise) ───────────────────────────
+  const confirmedPoseRef   = useRef<HandPose>('open')
+  const rawPoseRef         = useRef<HandPose>('open')
+  const rawPoseFramesRef   = useRef(0)
 
-  // ── Teardown ─────────────────────────────────────────────────────────────
-
+  // ── Teardown ──────────────────────────────────────────────────────────
   const stopAll = useCallback(() => {
     if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
-    prevPalmRef.current = null
-    pinchPhaseRef.current = 'idle'
-    pinchNodeRef.current = null
-    setHands([]); setActiveHandIndex(null); setMode('idle'); setPinch(null)
-    activeHandednessRef.current = null
+    if (mousePhaseRef.current === 'dragging') void window.maestro?.mouseToggle(false, 'left')
+    mousePhaseRef.current = 'idle'
+    targetNormRef.current = null
+    currentNormRef.current = null
+    confirmedPoseRef.current = 'open'
+    rawPoseRef.current = 'open'
+    rawPoseFramesRef.current = 0
+    setHands([]); setMode('disabled'); setMousePos(null)
   }, [])
 
-  // ── Init ─────────────────────────────────────────────────────────────────
-
+  // ── Init ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!maestroEnabled) { stopAll(); setStatus('off'); return }
     setStatus('loading')
@@ -310,15 +275,15 @@ export function useMaestro(): MaestroState {
           baseOptions: { modelAssetPath: MODEL_URL },
           runningMode: 'VIDEO',
           numHands: 2,
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
+          minHandDetectionConfidence: 0.3,
+          minHandPresenceConfidence: 0.3,
+          minTrackingConfidence: 0.3,
         })
         if (cancelled) { recognizer.close(); return }
         recognizerRef.current = recognizer
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
         })
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); recognizer.close(); return }
         streamRef.current = stream
@@ -339,8 +304,53 @@ export function useMaestro(): MaestroState {
     return () => { cancelled = true; stopAll() }
   }, [maestroEnabled, stopAll]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Detection loop ────────────────────────────────────────────────────────
+  // ── 60fps cursor interpolation loop (decoupled from MediaPipe rate) ──
+  // MediaPipe sets targetNormRef; this loop smoothly moves the cursor there.
+  useEffect(() => {
+    function cursorLoop(): void {
+      const target = targetNormRef.current
+      const current = currentNormRef.current
 
+      if (mousePhaseRef.current !== 'idle' && current) {
+        const vel = velocityRef.current
+
+        if (target) {
+          // MediaPipe has data — lerp toward target and track velocity
+          const dx = target.x - current.x
+          const dy = target.y - current.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          const speed = dist > 0.15 ? 0.3 : dist > 0.05 ? 0.6 : (1 - CURSOR_LERP)
+          const moveX = dx * speed
+          const moveY = dy * speed
+          current.x += moveX
+          current.y += moveY
+          // Smooth velocity estimate (exponential average of per-frame movement)
+          vel.vx = vel.vx * 0.5 + moveX * 0.5
+          vel.vy = vel.vy * 0.5 + moveY * 0.5
+        } else {
+          // No MediaPipe data — predict using velocity with friction
+          current.x = Math.max(0, Math.min(1, current.x + vel.vx))
+          current.y = Math.max(0, Math.min(1, current.y + vel.vy))
+          vel.vx *= 0.85  // friction: decelerate
+          vel.vy *= 0.85
+        }
+
+        const { absX, absY, winX, winY } = toScreenCoords(current.x, current.y)
+        void window.maestro?.mouseMove(Math.round(absX), Math.round(absY))
+        setMousePos({ x: winX, y: winY })
+      } else if (target && mousePhaseRef.current !== 'idle') {
+        // First frame — snap
+        currentNormRef.current = { ...target }
+        velocityRef.current = { vx: 0, vy: 0 }
+      }
+
+      cursorRafRef.current = requestAnimationFrame(cursorLoop)
+    }
+    cursorRafRef.current = requestAnimationFrame(cursorLoop)
+    return () => { if (cursorRafRef.current !== null) cancelAnimationFrame(cursorRafRef.current) }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Detection loop ────────────────────────────────────────────────────
   function startLoop(): void {
     let lastTs = -1
     function loop(): void {
@@ -359,7 +369,7 @@ export function useMaestro(): MaestroState {
     rafRef.current = requestAnimationFrame(loop)
   }
 
-  // ── Result processing ─────────────────────────────────────────────────────
+  // ── Result processing ─────────────────────────────────────────────────
 
   function processResult(result: GestureRecognizerResult): void {
     const detectedHands: DetectedHand[] = []
@@ -372,199 +382,278 @@ export function useMaestro(): MaestroState {
       detectedHands.push({ landmarks: lm, handedness, gesture, score, index: i })
     }
 
-    // ── Clap detection ───────────────────────────────────────────────────────
-    if (detectedHands.length === 2) {
-      const cA = palmCenter(detectedHands[0].landmarks)
-      const cB = palmCenter(detectedHands[1].landmarks)
-      const isClapping = distXY(cA, cB) < CLAP_THRESHOLD
-      const now = Date.now()
-      if (isClapping && !wasClappingRef.current && now - lastClapRef.current > CLAP_COOLDOWN_MS) {
-        lastClapRef.current = now
-        const cur = activeHandednessRef.current
-        const next = cur === null
-          ? detectedHands[0].handedness
-          : (detectedHands.find((h) => h.handedness !== cur)?.handedness ?? detectedHands[0].handedness)
-        activeHandednessRef.current = next
-        prevPalmRef.current = null
-      }
-      wasClappingRef.current = isClapping
-    } else {
-      wasClappingRef.current = false
-    }
+    // Only update hands state when we actually see hands — don't clear on empty frames
+    if (detectedHands.length > 0) setHands(detectedHands)
 
-    // ── No hands ─────────────────────────────────────────────────────────────
-    if (detectedHands.length === 0) {
-      prevPalmRef.current = null
-      pinchPhaseRef.current = 'idle'; pinchNodeRef.current = null
-      setHands([]); setActiveHandIndex(null); setMode('idle'); setPinch(null)
+    // ── Toggle detection (always active, even when gestures disabled) ──
+    detectToggle(detectedHands)
+
+    // ── If gestures disabled, reset mouse state ──
+    if (!gesturesActiveRef.current) {
+      resetMouseState()
+      setMode('disabled')
+      setMousePos(null)
       return
     }
 
-    if (activeHandednessRef.current === null) {
-      activeHandednessRef.current = detectedHands[0].handedness
+    // ── Left fist = "Cmd" modifier ──
+    // Left fist + right open palm moving up/down = Cmd+scroll = zoom
+    // Left fist + right pinch = Cmd+click / Cmd+drag (passes through to normal pinch with meta key)
+    const leftHand  = detectedHands.find((h) => h.handedness === 'Left')
+    const rightHand = detectedHands.find((h) => h.handedness === 'Right')
+    const leftFist  = !!(leftHand && isFist(leftHand.landmarks))
+    // Toggle Cmd key when fist state changes
+    if (leftFist !== cmdActiveRef.current) {
+      cmdActiveRef.current = leftFist
+      void window.maestro.keyToggle('command', leftFist)
     }
 
-    const activeHand = detectedHands.find((h) => h.handedness === activeHandednessRef.current)
-      ?? detectedHands[0]
-    const activeIdx = detectedHands.indexOf(activeHand)
-
-    // ── Double-pinch state machine (takes priority over all other gestures) ───
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const pinchPt = detectPinchPoint(activeHand.landmarks, vw, vh)
-    const isPinching = pinchPt !== null
-    const now = Date.now()
-
-    // During focus cooldown, block pinch entirely
-    if (isPinching && now - lastFocusRef.current <= FOCUS_COOLDOWN_MS) {
-      setPinch(null)
-      setHands(detectedHands); setActiveHandIndex(activeIdx); setMode('idle')
-      return
-    }
-
-    // Run the state machine
-    const phase = pinchPhaseRef.current
-
-    if (isPinching) {
-      prevPalmRef.current = null
-      zoomStableRef.current = { zoomIn: false, frames: 0, active: false }
-
-      if (phase === 'idle') {
-        // First pinch → primed
-        pinchPhaseRef.current     = 'primed'
-        pinchPhaseTimeRef.current = now
-        pinchNodeRef.current      = hitTestNode(pinchPt.x, pinchPt.y)
-        setPinch({ phase: 'primed', progress: 0, screenX: pinchPt.x, screenY: pinchPt.y, nodeId: pinchNodeRef.current })
-
-      } else if (phase === 'primed') {
-        // Still holding first pinch — keep showing primed, no action yet
-        setPinch({ phase: 'primed', progress: 0, screenX: pinchPt.x, screenY: pinchPt.y, nodeId: pinchNodeRef.current })
-
-      } else if (phase === 'awaiting-second') {
-        if (now - pinchPhaseTimeRef.current <= DOUBLE_PINCH_WINDOW_MS) {
-          // Second pinch within window → start dwelling
-          pinchPhaseRef.current     = 'dwelling'
-          pinchPhaseTimeRef.current = now
-          pinchNodeRef.current      = hitTestNode(pinchPt.x, pinchPt.y)
-          setPinch({ phase: 'dwelling', progress: 0, screenX: pinchPt.x, screenY: pinchPt.y, nodeId: pinchNodeRef.current })
-        } else {
-          // Window expired — treat this as a fresh first pinch
-          pinchPhaseRef.current     = 'primed'
-          pinchPhaseTimeRef.current = now
-          pinchNodeRef.current      = hitTestNode(pinchPt.x, pinchPt.y)
-          setPinch({ phase: 'primed', progress: 0, screenX: pinchPt.x, screenY: pinchPt.y, nodeId: pinchNodeRef.current })
-        }
-
-      } else if (phase === 'dwelling') {
-        const progress = Math.min(1, (now - pinchPhaseTimeRef.current) / PINCH_DWELL_MS)
-        if (progress >= 1 && pinchNodeRef.current) {
-          // Dwell complete — fire focus
-          zoomFitNode(pinchNodeRef.current)
-          lastFocusRef.current  = now
-          pinchPhaseRef.current = 'idle'
-          pinchNodeRef.current  = null
-          setPinch(null)
-          setHands(detectedHands); setActiveHandIndex(activeIdx); setMode('idle')
-          return
-        }
-        setPinch({ phase: 'dwelling', progress, screenX: pinchPt.x, screenY: pinchPt.y, nodeId: pinchNodeRef.current })
-      }
-
-      setHands(detectedHands); setActiveHandIndex(activeIdx); setMode('pinching')
-      return
-    }
-
-    // ── Not pinching ─────────────────────────────────────────────────────────
-    if (phase === 'primed') {
-      // First pinch released → open the window for the second pinch
-      pinchPhaseRef.current     = 'awaiting-second'
-      pinchPhaseTimeRef.current = now
-      setPinch({ phase: 'awaiting-second', progress: 0,
-        screenX: pinch?.screenX ?? 0, screenY: pinch?.screenY ?? 0, nodeId: pinchNodeRef.current })
-      setHands(detectedHands); setActiveHandIndex(activeIdx); setMode('pinching')
-      return
-    }
-
-    if (phase === 'awaiting-second') {
-      if (now - pinchPhaseTimeRef.current <= DOUBLE_PINCH_WINDOW_MS) {
-        // Still within window, keep showing hint
-        setPinch({ phase: 'awaiting-second', progress: 0,
-          screenX: pinch?.screenX ?? 0, screenY: pinch?.screenY ?? 0, nodeId: pinchNodeRef.current })
-        setHands(detectedHands); setActiveHandIndex(activeIdx); setMode('pinching')
+    if (leftFist && rightHand) {
+      if (isOpenPalm(rightHand.landmarks)) {
+        // Left fist + right open palm → zoom via vertical movement
+        processZoom(rightHand)
         return
       }
-      // Window expired without second pinch — reset
-      pinchPhaseRef.current = 'idle'
-      pinchNodeRef.current  = null
+      // Left fist + right pinching → falls through to normal pinch with Cmd held
     }
 
-    if (phase === 'dwelling') {
-      // Released during dwell — reset
-      pinchPhaseRef.current = 'idle'
-      pinchNodeRef.current  = null
+    // Not zooming — clear zoom state
+    prevZoomYRef.current = null
+
+    // ── Pick the controlling hand (single-hand mode) ──
+    // Prefer 'Right' but fall back to whatever hand is visible.
+    const controlHand = rightHand ?? detectedHands[0]
+
+    // No hand visible — clear target so the cursor loop uses velocity prediction.
+    if (!controlHand) {
+      targetNormRef.current = null
+      return
     }
 
-    setPinch(null)
-
-    // ── Normal gesture → camera action ────────────────────────────────────────
-    const nextMode = applyGesture(activeHand, vw, vh)
-    setHands(detectedHands); setActiveHandIndex(activeIdx); setMode(nextMode)
+    // ── Process hand as mouse ──
+    processMouseHand(controlHand)
   }
 
-  function applyGesture(hand: DetectedHand, vw: number, vh: number): MaestroMode {
+  // ── Toggle: both hands open palms, held for 1.5s ───────────────────
+  //
+  // Both hands must be detected with all fingers extended (open palm).
+  // Hold for TOGGLE_HOLD_MS to toggle on or off.
+  // Can't accidentally trigger during pinch/drag (those use closed fingers).
+
+  function detectToggle(detectedHands: DetectedHand[]): void {
+    const now = Date.now()
+
+    // Need 2 hands, both showing open palm
+    const bothOpen = detectedHands.length >= 2
+      && isOpenPalm(detectedHands[0].landmarks)
+      && isOpenPalm(detectedHands[1].landmarks)
+
+    if (!bothOpen) {
+      bothOpenSinceRef.current = 0
+      return
+    }
+
+    if (bothOpenSinceRef.current === 0) {
+      bothOpenSinceRef.current = now
+    }
+
+    if (now - bothOpenSinceRef.current >= TOGGLE_HOLD_MS) {
+      if (now - lastToggleRef.current > TOGGLE_COOLDOWN_MS) {
+        gesturesActiveRef.current = !gesturesActiveRef.current
+        setGesturesActive(gesturesActiveRef.current)
+        lastToggleRef.current = now
+        bothOpenSinceRef.current = 0
+        if (!gesturesActiveRef.current) resetMouseState()
+      }
+    }
+  }
+
+  // ── Cmd+scroll zoom: left fist held, right hand vertical = zoom ─────
+
+  function processZoom(rightHand: DetectedHand): void {
+    const center = palmCenter(rightHand.landmarks)
+    const y = center.y  // normalized 0 (top) to 1 (bottom)
+
+    if (prevZoomYRef.current === null) {
+      prevZoomYRef.current = y
+      setMode('zooming')
+      return  // first frame — just record
+    }
+
+    const dy = y - prevZoomYRef.current
+    prevZoomYRef.current = y
+
+    // Moving hand up (dy < 0) → zoom in, down (dy > 0) → zoom out
+    // Like Cmd+scroll: scroll up = zoom in
+    if (Math.abs(dy) > 0.002) {
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      zoomAt(vw / 2, vh / 2, dy * vw * ZOOM_SENSITIVITY)
+    }
+
+    setMode('zooming')
+  }
+
+  // ── Mouse hand processing ─────────────────────────────────────────────
+
+  function processMouseHand(hand: DetectedHand): void {
     const lms = hand.landmarks
 
-    // ── Pan: Closed_Fist ─────────────────────────────────────────────────────
-    if (hand.gesture === 'Closed_Fist') {
-      zoomStableRef.current = { zoomIn: false, frames: 0, active: false }
-      const center = palmCenter(lms)
-      const mx = 1 - center.x, my = center.y
-      if (prevPalmRef.current) {
-        const dx = (mx - prevPalmRef.current.x) * vw * PAN_SENSITIVITY
-        const dy = (my - prevPalmRef.current.y) * vh * PAN_SENSITIVITY
-        if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) pan(dx, dy)
-      }
-      prevPalmRef.current = { x: mx, y: my }
-      return 'pan'
-    }
-
-    prevPalmRef.current = null
-
-    // ── Zoom in: L gesture (index up + thumb out, others curled) ────────────
-    if (isLGesture(lms)) return applyZoom(true, lms, vw, vh)
-
-    // ── Zoom out: Bunch gesture (all fingertips gathered) ───────────────────
-    if (isBunchGesture(lms)) return applyZoom(false, lms, vw, vh)
-
-    // ── Zoom out: Closed pinch (thumb+index touching, others curled) ─────────
-    if (isClosedPinchGesture(lms)) return applyZoom(false, lms, vw, vh)
-
-    // ── Idle ─────────────────────────────────────────────────────────────────
-    zoomStableRef.current = { zoomIn: false, frames: 0, active: false }
-    return 'idle'
-  }
-
-  /**
-   * Stability-gated zoom.  The same zoom direction must be confirmed for
-   * ZOOM_STABLE_FRAMES consecutive frames before the canvas starts moving.
-   */
-  function applyZoom(zoomIn: boolean, lms: HandLandmark[], vw: number, vh: number): MaestroMode {
-    const mode: MaestroMode = zoomIn ? 'zoom-in' : 'zoom-out'
-    const stable = zoomStableRef.current
-
-    if (stable.active && stable.zoomIn === zoomIn) {
-      stable.frames++
+    // ── Debounced pose classification ──
+    const rawPose = classifyPose(lms)
+    if (rawPose === rawPoseRef.current) {
+      rawPoseFramesRef.current++
     } else {
-      zoomStableRef.current = { zoomIn, frames: 1, active: true }
-      return mode   // show label but don't move yet
+      rawPoseRef.current = rawPose
+      rawPoseFramesRef.current = 1
+    }
+    if (rawPoseFramesRef.current >= PINCH_CONFIRM_FRAMES) {
+      confirmedPoseRef.current = rawPose
+    }
+    const pose = confirmedPoseRef.current
+
+    const now = Date.now()
+    const phase = mousePhaseRef.current
+
+    // ── Update target position for the 60fps interpolation loop ──
+    // MediaPipe sets the target; the cursor loop smoothly moves there.
+    if (phase !== 'idle') {
+      targetNormRef.current = { x: lms[8].x, y: lms[8].y }
     }
 
-    if (stable.frames < ZOOM_STABLE_FRAMES) return mode
+    // ── IDLE: cursor stays still, wait for pinch ──
+    if (phase === 'idle') {
+      if (pose === 'pinch') {
+        // Snap cursor to finger immediately (no lerp on first frame)
+        const raw = lms[8]
+        targetNormRef.current = { x: raw.x, y: raw.y }
+        currentNormRef.current = { x: raw.x, y: raw.y }
+        mousePhaseRef.current = 'pinching'
+        pinchStartRef.current = now
+        setMode('clicking')
+      } else {
+        setMode('idle')
+      }
+      return
+    }
 
-    const center = palmCenter(lms)
-    zoomAt((1 - center.x) * vw, center.y * vh, zoomIn ? ZOOM_IN_DELTA : ZOOM_OUT_DELTA)
-    return mode
+    // ── PINCHING: cursor follows index finger, deciding click vs drag ──
+    if (phase === 'pinching') {
+      if (pose === 'open') {
+        // Pinch released → move cursor to final position, then click
+        const pos = currentNormRef.current
+        if (pos) {
+          const { absX, absY } = toScreenCoords(pos.x, pos.y)
+          void window.maestro.mouseMove(Math.round(absX), Math.round(absY))
+            .then(() => window.maestro.mouseClick('left'))
+        } else {
+          void window.maestro.mouseClick('left')
+        }
+        targetNormRef.current = null
+        currentNormRef.current = null
+        mousePhaseRef.current = 'idle'
+        setMode('idle')
+        return
+      }
+
+      if (now - pinchStartRef.current > DRAG_THRESHOLD_MS) {
+        // Held past threshold → ensure cursor is positioned, then mouse down
+        const pos = currentNormRef.current
+        if (pos) {
+          const { absX, absY } = toScreenCoords(pos.x, pos.y)
+          void window.maestro.mouseMove(Math.round(absX), Math.round(absY))
+            .then(() => window.maestro.mouseToggle(true, 'left'))
+        } else {
+          void window.maestro.mouseToggle(true, 'left')
+        }
+        mousePhaseRef.current = 'dragging'
+        setMode('dragging')
+      } else {
+        setMode('clicking')
+      }
+      return
+    }
+
+    // ── DRAGGING: mouse button held, cursor follows index finger ──
+    // Uses confidence-based exit: confidence decays when pinch not detected,
+    // only exits after confidence stays below threshold for sustained period.
+    if (phase === 'dragging') {
+      // Debounced pose says open → intentional release, stop immediately
+      if (pose === 'open') {
+        void window.maestro.mouseToggle(false, 'left')
+        dragConfidenceRef.current = 1
+        softStopSinceRef.current = 0
+        targetNormRef.current = null
+    currentNormRef.current = null
+        mousePhaseRef.current = 'idle'
+        setMode('idle')
+        return
+      }
+
+      // Raw per-frame pinch check with wider threshold — fingers can separate
+      // more during fast drag movement without dropping confidence.
+      const rawPinching = isPinchingDrag(lms)
+
+      if (rawPinching) {
+        dragConfidenceRef.current = 1
+      } else {
+        dragConfidenceRef.current = Math.max(0, dragConfidenceRef.current - DRAG_CONFIDENCE_DECAY)
+      }
+
+      const conf = dragConfidenceRef.current
+
+      // Hard stop: below 80% → end immediately
+      if (conf < DRAG_CONFIDENCE_HARD_STOP) {
+        void window.maestro.mouseToggle(false, 'left')
+        dragConfidenceRef.current = 1
+        softStopSinceRef.current = 0
+        targetNormRef.current = null
+    currentNormRef.current = null
+        mousePhaseRef.current = 'idle'
+        setMode('idle')
+        return
+      }
+
+      // Soft stop: between 80–90% → end after 500ms
+      if (conf < DRAG_CONFIDENCE_SOFT_STOP) {
+        if (softStopSinceRef.current === 0) softStopSinceRef.current = now
+        if (now - softStopSinceRef.current >= DRAG_SOFT_STOP_MS) {
+          void window.maestro.mouseToggle(false, 'left')
+          dragConfidenceRef.current = 1
+          softStopSinceRef.current = 0
+          targetNormRef.current = null
+    currentNormRef.current = null
+          mousePhaseRef.current = 'idle'
+          setMode('idle')
+          return
+        }
+      }
+
+      // Recovered above 96% → reset soft-stop timer
+      if (conf >= DRAG_CONFIDENCE_RECOVER) {
+        softStopSinceRef.current = 0
+      }
+
+      setMode('dragging')
+      return
+    }
   }
 
-  return { status, mode, hands, activeHandIndex, pinch, videoRef, connections: HAND_CONNECTIONS }
+  // ── Utility ───────────────────────────────────────────────────────────
+
+  function resetMouseState(): void {
+    if (mousePhaseRef.current === 'dragging') void window.maestro?.mouseToggle(false, 'left')
+    if (cmdActiveRef.current) { void window.maestro?.keyToggle('command', false); cmdActiveRef.current = false }
+    mousePhaseRef.current = 'idle'
+    targetNormRef.current = null
+    currentNormRef.current = null
+    confirmedPoseRef.current = 'open'
+    rawPoseRef.current = 'open'
+    rawPoseFramesRef.current = 0
+    dragConfidenceRef.current = 1
+    softStopSinceRef.current = 0
+    velocityRef.current = { vx: 0, vy: 0 }
+  }
+
+  return { status, mode, gesturesActive, hands, mousePos, videoRef, connections: HAND_CONNECTIONS }
 }

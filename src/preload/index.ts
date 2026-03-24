@@ -184,6 +184,19 @@ contextBridge.exposeInMainWorld('app', {
     ipcRenderer.invoke('app:openExternal', url),
 })
 
+contextBridge.exposeInMainWorld('maestro', {
+  mouseMove: (x: number, y: number): Promise<void> =>
+    ipcRenderer.invoke('maestro:mouse-move', x, y),
+  mouseClick: (button: string = 'left'): Promise<void> =>
+    ipcRenderer.invoke('maestro:mouse-click', button),
+  mouseToggle: (down: boolean, button: string = 'left'): Promise<void> =>
+    ipcRenderer.invoke('maestro:mouse-toggle', down, button),
+  getMousePos: (): Promise<{ x: number; y: number }> =>
+    ipcRenderer.invoke('maestro:mouse-get-pos'),
+  keyToggle: (key: string, down: boolean): Promise<void> =>
+    ipcRenderer.invoke('maestro:key-toggle', key, down),
+})
+
 contextBridge.exposeInMainWorld('browser', {
   create: (nodeId: string, partition: string, url: string, bounds: { x: number; y: number; width: number; height: number }): Promise<void> =>
     ipcRenderer.invoke('browser:create', nodeId, partition, url, bounds),
