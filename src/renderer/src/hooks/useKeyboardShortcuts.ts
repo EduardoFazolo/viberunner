@@ -71,6 +71,15 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
           useNodeStore.getState().add('lovable', wx - 460, wy - 360)
           break
         }
+        case 'newWindowPicker': {
+          const camera = useCameraStore.getState().camera
+          const vw = document.documentElement.clientWidth / 2
+          const vh = document.documentElement.clientHeight / 2
+          const wx = (vw - camera.x) / camera.zoom
+          const wy = (vh - camera.y) / camera.zoom
+          useNodeStore.getState().add('windowpicker', wx - 240, wy - 200)
+          break
+        }
         case 'fitAll':
           notifyCanvasInteractionStart()
           fitAllNodes(useNodeStore.getState().nodes)

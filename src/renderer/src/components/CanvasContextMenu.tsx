@@ -66,6 +66,10 @@ export function CanvasContextMenu({ children }: Props): React.ReactElement {
         <ContextMenuItem onClick={() => add('note', clickWorldPos.current.x - 150, clickWorldPos.current.y - 100)}>
           <span style={{ flex: 1 }}>New Note</span>
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => add('windowpicker', clickWorldPos.current.x - 240, clickWorldPos.current.y - 200)}>
+          <span style={{ flex: 1 }}>New Window Picker</span>
+          <span style={{ marginLeft: 24, opacity: 0.35, fontSize: 11 }}>⌘⇧W</span>
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => fitAllNodes(useNodeStore.getState().nodes)}>
           <span style={{ flex: 1 }}>Fit All Nodes</span>
