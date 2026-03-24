@@ -15,6 +15,7 @@ import { registerGitHandlers } from '../plugins/monaco/main/gitHandlers'
 import { registerLovableHandlers } from '../plugins/lovable/main/handlers'
 import { registerOrchestratorHandlers } from '../plugins/orchestrator/main/handlers'
 import { registerMaestroHandlers } from '../plugins/maestro/main/handlers'
+import { registerVoiceHandlers } from './voice'
 
 // Suppress noisy Chromium GPU/Skia internal errors that are benign in webview usage
 app.commandLine.appendSwitch('log-level', '3')
@@ -68,6 +69,7 @@ function createWindow(): void {
     else if (mod && input.shift && input.key === 'C') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newClaude') }
     else if (mod && input.shift && input.key === 'E') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newEditor') }
     else if (mod && input.shift && input.key === 'L') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'newLovable') }
+    else if (mod && input.shift && input.key === 'V') { event.preventDefault(); mainWindow!.webContents.send('shortcut', 'voiceToggle') }
     else if (mod && input.alt && input.key === 'i') { event.preventDefault(); mainWindow!.webContents.toggleDevTools() }
 
   })
@@ -146,6 +148,7 @@ app.whenReady().then(async () => {
   registerLovableHandlers(ipcMain)
   registerOrchestratorHandlers(ipcMain, () => mainWindow?.webContents ?? null)
   registerMaestroHandlers(ipcMain)
+  registerVoiceHandlers(() => mainWindow?.webContents ?? null)
 
   // Init tmux and clean up orphan sessions from deleted nodes
   await tmuxManager.init()

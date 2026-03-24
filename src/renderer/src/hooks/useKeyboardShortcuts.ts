@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNodeStore } from '../stores/nodeStore'
 import { useCameraStore } from '../stores/cameraStore'
+import { useVoiceStore } from '../stores/voiceStore'
 import { fitAllNodes } from '../utils/canvasUtils'
 import { notifyCanvasInteractionEnd, notifyCanvasInteractionStart } from '../utils/canvasInteraction'
 import { getActiveWorkspace } from '../stores/workspaceStore'
@@ -92,6 +93,21 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
         case 'settings':
           onSettings()
           break
+        case 'voiceToggle': {
+          const voice = useVoiceStore.getState()
+          const wasRecording = voice.recording
+          if (wasRecording) {
+            voice.stopRecording()
+          } else {
+            voice.startRecording()
+          }
+          window.voice?.toggle().catch(() => {
+            // If toggle fails, revert state
+            if (wasRecording) voice.startRecording()
+            else voice.stopRecording()
+          })
+          break
+        }
       }
     })
     return unsub

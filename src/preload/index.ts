@@ -271,6 +271,26 @@ contextBridge.exposeInMainWorld('lovable', {
     ipcRenderer.invoke('lovable:install-mcp-global'),
 })
 
+contextBridge.exposeInMainWorld('voice', {
+  checkHandy: (): Promise<boolean> =>
+    ipcRenderer.invoke('voice:checkHandy'),
+
+  installHandy: (): Promise<void> =>
+    ipcRenderer.invoke('voice:installHandy'),
+
+  setup: (): Promise<{ bridgeScriptPath: string }> =>
+    ipcRenderer.invoke('voice:setup'),
+
+  toggle: (): Promise<void> =>
+    ipcRenderer.invoke('voice:toggle'),
+
+  onTranscript: (cb: (text: string) => void): (() => void) => {
+    const listener = (_: unknown, text: string) => cb(text)
+    ipcRenderer.on('voice:transcript', listener)
+    return () => ipcRenderer.removeListener('voice:transcript', listener)
+  },
+})
+
 contextBridge.exposeInMainWorld('orchestrator', {
   start: (orchestratorId: string, payload: OrchestratorStartPayload): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('orchestrator:start', orchestratorId, payload),

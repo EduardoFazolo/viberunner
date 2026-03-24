@@ -93,6 +93,8 @@ export function SettingsView(): React.ReactElement {
           </>
         )}
 
+        <VoiceSection />
+
         <McpSection />
 
         <div style={{ marginTop: 32, fontSize: 11, color: 'rgba(255,255,255,0.15)' }}>
@@ -100,6 +102,106 @@ export function SettingsView(): React.ReactElement {
         </div>
       </div>
     </div>
+  )
+}
+
+function VoiceSection(): React.ReactElement {
+  const [installed, setInstalled] = useState<boolean | null>(null)
+  const [installing, setInstalling] = useState(false)
+  const [bridgePath, setBridgePath] = useState<string | null>(null)
+
+  const check = useCallback(async () => {
+    const result = await window.voice.checkHandy()
+    setInstalled(result)
+    if (result) {
+      const { bridgeScriptPath } = await window.voice.setup()
+      setBridgePath(bridgeScriptPath)
+    }
+  }, [])
+
+  useEffect(() => { check() }, [check])
+
+  const install = async () => {
+    setInstalling(true)
+    try {
+      await window.voice.installHandy()
+      await check()
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  return (
+    <Section label="Voice Commands">
+      <div style={{
+        padding: '12px 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ fontSize: 16 }}>🎙</span>
+          <div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
+              Handy (Speech-to-Text)
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
+              Offline voice commands via Whisper. Toggle with Cmd+Shift+V.
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          {installed === null ? (
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>checking…</span>
+          ) : installed ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: '#4ade80',
+                boxShadow: '0 0 6px #4ade80',
+              }} />
+              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Installed</span>
+            </div>
+          ) : (
+            <button
+              onClick={install}
+              disabled={installing}
+              style={{
+                height: 28, padding: '0 14px', borderRadius: 6, fontSize: 11,
+                border: '1px solid rgba(167,139,250,0.4)',
+                background: 'rgba(167,139,250,0.1)',
+                color: installing ? 'rgba(255,255,255,0.3)' : '#a78bfa',
+                cursor: installing ? 'default' : 'pointer',
+                fontFamily: 'inherit', fontWeight: 500,
+                transition: 'all 0.1s',
+              }}
+            >
+              {installing ? 'Installing…' : 'Install via Homebrew'}
+            </button>
+          )}
+        </div>
+      </div>
+      {installed && bridgePath && (
+        <div style={{
+          padding: '8px 16px 12px',
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+        }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
+            Set Handy's paste method to <span style={{ color: 'rgba(255,255,255,0.55)', fontFamily: 'monospace' }}>external_script</span> and
+            point it to:
+          </div>
+          <div style={{
+            marginTop: 6, padding: '6px 10px', borderRadius: 5,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            fontSize: 11, fontFamily: 'monospace',
+            color: 'rgba(255,255,255,0.55)',
+            wordBreak: 'break-all',
+            userSelect: 'all',
+          }}>
+            {bridgePath}
+          </div>
+        </div>
+      )}
+    </Section>
   )
 }
 

@@ -110,6 +110,14 @@ declare global {
       openExternal: (url: string) => Promise<void>
     }
 
+    voice: {
+      checkHandy: () => Promise<boolean>
+      installHandy: () => Promise<void>
+      setup: () => Promise<{ bridgeScriptPath: string }>
+      toggle: () => Promise<void>
+      onTranscript: (cb: (text: string) => void) => () => void
+    }
+
     orchestrator: {
       start: (orchestratorId: string, payload: OrchestratorStartPayload) => Promise<{ ok: boolean }>
       cancel: (orchestratorId: string) => Promise<void>
