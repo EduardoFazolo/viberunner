@@ -90,6 +90,45 @@ export function SettingsView(): React.ReactElement {
                 </div>
               </SettingRow>
             </Section>
+
+            <Section label="Voice Commands">
+              <SettingRow
+                label="API key"
+                hint="OpenAI-compatible API key for the voice agent."
+              >
+                <input
+                  type="password"
+                  value={settings.voiceApiKey}
+                  placeholder="sk-..."
+                  onChange={(e) => update({ voiceApiKey: e.target.value })}
+                  style={inputStyle}
+                />
+              </SettingRow>
+              <SettingRow
+                label="Base URL"
+                hint="OpenAI-compatible API endpoint."
+              >
+                <input
+                  type="text"
+                  value={settings.voiceBaseUrl}
+                  placeholder="https://api.moonshot.ai/v1"
+                  onChange={(e) => update({ voiceBaseUrl: e.target.value })}
+                  style={inputStyle}
+                />
+              </SettingRow>
+              <SettingRow
+                label="Model"
+                hint="Model ID to use for voice commands."
+              >
+                <input
+                  type="text"
+                  value={settings.voiceModel}
+                  placeholder="kimi-k2-0905-preview"
+                  onChange={(e) => update({ voiceModel: e.target.value })}
+                  style={inputStyle}
+                />
+              </SettingRow>
+            </Section>
           </>
         )}
 
@@ -179,16 +218,15 @@ function McpSection(): React.ReactElement {
           padding: '8px 16px 12px',
           borderTop: '1px solid rgba(255,255,255,0.05)',
         }}>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
-            Set Handy's paste method to <span style={{ color: 'rgba(255,255,255,0.55)', fontFamily: 'monospace' }}>external_script</span> and
-            point it to:
+          <div style={{ fontSize: 11, color: 'rgba(167,139,250,0.6)', lineHeight: 1.6 }}>
+            Handy auto-configured. Restart Handy to apply changes.
           </div>
           <div style={{
             marginTop: 6, padding: '6px 10px', borderRadius: 5,
             background: 'rgba(255,255,255,0.04)',
             border: '1px solid rgba(255,255,255,0.08)',
             fontSize: 11, fontFamily: 'monospace',
-            color: 'rgba(255,255,255,0.55)',
+            color: 'rgba(255,255,255,0.35)',
             wordBreak: 'break-all',
             userSelect: 'all',
           }}>

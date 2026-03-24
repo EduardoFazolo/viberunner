@@ -1,7 +1,10 @@
 import { ipcMain, app, type WebContents } from 'electron'
 import { execFile, spawn } from 'child_process'
-import { existsSync, mkdirSync, writeFileSync, watch, readFileSync, unlinkSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, watch, readFileSync } from 'fs'
 import { join } from 'path'
+import { homedir } from 'os'
+import { runVoiceAgent, initVoiceAgent } from './mcp/agent'
+import { getAppState } from './database'
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -47,6 +50,49 @@ function installHandy(): Promise<void> {
     })
     proc.on('error', reject)
   })
+}
+
+// ---------------------------------------------------------------------------
+// Bridge script — Handy calls this with transcript as $1
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Auto-configure Handy to use our bridge script
+// ---------------------------------------------------------------------------
+
+function getHandySettingsPath(): string {
+  return join(homedir(), 'Library', 'Application Support', 'com.pais.handy', 'settings_store.json')
+}
+
+function configureHandy(): { configured: boolean; error?: string } {
+  const settingsPath = getHandySettingsPath()
+  if (!existsSync(settingsPath)) {
+    return { configured: false, error: 'Handy settings not found. Open Handy at least once first.' }
+  }
+
+  try {
+    const raw = readFileSync(settingsPath, 'utf-8')
+    const config = JSON.parse(raw)
+    const bridgePath = getBridgeScriptPath()
+
+    const settings = config.settings ?? config
+    const needsUpdate =
+      settings.paste_method !== 'external_script' ||
+      settings.external_script_path !== bridgePath
+
+    if (needsUpdate) {
+      settings.paste_method = 'external_script'
+      settings.external_script_path = bridgePath
+      if (config.settings) config.settings = settings
+      writeFileSync(settingsPath, JSON.stringify(config, null, 2))
+      console.log('[voice] Configured Handy: paste_method=external_script, script=' + bridgePath)
+      return { configured: true }
+    }
+
+    return { configured: true }
+  } catch (err: any) {
+    return { configured: false, error: err.message }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -135,24 +181,45 @@ export function registerVoiceHandlers(getWebContents: () => WebContents | null):
 
   ipcMain.handle('voice:installHandy', async () => {
     await installHandy()
-    // After install, set up the bridge
     ensureBridgeScript()
+    configureHandy()
     startTranscriptWatcher()
   })
 
   ipcMain.handle('voice:setup', () => {
     ensureBridgeScript()
+    const result = configureHandy()
     startTranscriptWatcher()
-    return { bridgeScriptPath: getBridgeScriptPath() }
+    return { bridgeScriptPath: getBridgeScriptPath(), handyConfigured: result.configured, error: result.error }
   })
 
   ipcMain.handle('voice:toggle', async () => {
     await toggleTranscription()
   })
 
-  // Initialize bridge on startup if Handy is installed
+  // Run the voice agent on a transcript (called by renderer in command mode)
+  ipcMain.handle('voice:runAgent', async (_e, transcript: string) => {
+    let apiKey = ''
+    let baseUrl = 'https://api.moonshot.ai/v1'
+    let model = 'kimi-k2-0905-preview'
+    try {
+      const raw = getAppState('settings')
+      if (raw) {
+        const settings = JSON.parse(raw)
+        if (settings.voiceApiKey) apiKey = settings.voiceApiKey
+        if (settings.voiceBaseUrl) baseUrl = settings.voiceBaseUrl
+        if (settings.voiceModel) model = settings.voiceModel
+      }
+    } catch {}
+    console.log(`[voice] Agent config: baseUrl=${baseUrl}, model=${model}, key=${apiKey ? apiKey.slice(0, 8) + '...' : '(empty)'}`)
+    return runVoiceAgent(transcript, apiKey, baseUrl, model)
+  })
+
+  // Initialize agent + bridge
+  initVoiceAgent(getWebContents)
   if (isHandyInstalled()) {
     ensureBridgeScript()
+    configureHandy()
     startTranscriptWatcher()
   }
 }

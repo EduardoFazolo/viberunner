@@ -123,6 +123,8 @@ declare global {
       setup: () => Promise<{ bridgeScriptPath: string }>
       toggle: () => Promise<void>
       onTranscript: (cb: (text: string) => void) => () => void
+      runAgent: (transcript: string) => Promise<string | null>
+      onAgentStatus: (cb: (status: { state: string; message?: string }) => void) => () => void
     }
 
     orchestrator: {

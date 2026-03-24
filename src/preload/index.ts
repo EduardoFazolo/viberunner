@@ -309,6 +309,15 @@ contextBridge.exposeInMainWorld('voice', {
     ipcRenderer.on('voice:transcript', listener)
     return () => ipcRenderer.removeListener('voice:transcript', listener)
   },
+
+  runAgent: (transcript: string): Promise<string | null> =>
+    ipcRenderer.invoke('voice:runAgent', transcript),
+
+  onAgentStatus: (cb: (status: { state: string; message?: string }) => void): (() => void) => {
+    const listener = (_: unknown, status: { state: string; message?: string }) => cb(status)
+    ipcRenderer.on('voice:agentStatus', listener)
+    return () => ipcRenderer.removeListener('voice:agentStatus', listener)
+  },
 })
 
 contextBridge.exposeInMainWorld('orchestrator', {
