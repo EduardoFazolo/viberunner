@@ -1,13 +1,10 @@
 import OpenAI from 'openai'
-import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { MCP_TOOLS } from './tools'
 import { executeTool } from './handlers'
-import { getAppState } from '../database'
+import { parsePlan, summarizeAction } from './planner'
+import type { PlannedAction } from './planner'
 import type { WebContents } from 'electron'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface AgentStatus {
   state: 'thinking' | 'executing' | 'done' | 'error'
@@ -28,9 +25,21 @@ function sendStatus(status: AgentStatus): void {
 // System prompt builder
 // ---------------------------------------------------------------------------
 
-// Cache to avoid rebuilding every call
 let _cachedPrompt: { text: string; ts: number } | null = null
 const CACHE_TTL = 5_000
+
+// Only action tools — read tools are pre-loaded in the system prompt
+const READ_TOOLS = new Set(['listNodes', 'listWorkspaces', 'getCamera'])
+const ACTION_TOOLS = MCP_TOOLS.filter((t) => !READ_TOOLS.has(t.name))
+
+function buildToolReference(): string {
+  return ACTION_TOOLS.map((t) => {
+    const params = Object.entries(t.input_schema.properties)
+      .map(([k, v]) => `${k}: ${(v as any).type}${(v as any).enum ? ` (${(v as any).enum.join('|')})` : ''}`)
+      .join(', ')
+    return `- ${t.name}(${params}) — ${t.description.split('.')[0]}`
+  }).join('\n')
+}
 
 async function buildSystemPrompt(): Promise<string> {
   if (_cachedPrompt && Date.now() - _cachedPrompt.ts < CACHE_TTL) {
@@ -41,35 +50,38 @@ async function buildSystemPrompt(): Promise<string> {
   const nodesResult = await executeTool('listNodes', {}) as { nodes: any[] }
   const cameraResult = await executeTool('getCamera', {}) as { x: number; y: number; zoom: number }
 
-  // Slim node data — agent only needs id, type, title, and key metadata
   const nodes = nodesResult.nodes.map((n: any) => ({
-    id: n.id,
-    type: n.type,
-    title: n.title,
-    pinned: n.pinned || undefined,
-    description: n.description || undefined,
-    focusCount: n.focusCount || undefined,
+    id: n.id, type: n.type, title: n.title,
+    ...(n.pinned ? { pinned: true } : {}),
+    ...(n.description ? { description: n.description } : {}),
   }))
 
   const workspaces = workspacesResult.workspaces.map((w: any) => ({
-    id: w.id, name: w.name, description: w.description || undefined,
+    id: w.id, name: w.name,
+    ...(w.description ? { description: w.description } : {}),
   }))
 
-  const text = `You control CanvaFlow, a canvas workspace app.
+  const text = `You are a voice command parser for CanvaFlow, a canvas workspace app.
 
-CRITICAL: You MUST respond ONLY with tool calls. NEVER respond with text. NEVER explain what you're doing. NEVER say "I'll do X". Just call the tool. If you cannot fulfill a request, call fitAll as a fallback.
+Given a voice command, return a JSON array of actions to execute IN ORDER.
+Each action: {"tool": "<tool_name>", "args": {<arguments>}}
 
-COMMANDS → TOOLS:
-- "show all/nodes/windows" → fitAll
-- "show/focus/go to X" → focusNode (match by title/type below)
-- "open terminal/browser/claude/editor" → openNode
-- "organize/arrange" → arrangeNodes
-- "close/remove X" → removeNode
-- "switch workspace X" → switchWorkspace
-- "zoom in/out" → setCamera
+RESPOND WITH ONLY THE JSON ARRAY. No text, no markdown, no explanation.
+
+AVAILABLE TOOLS:
+${buildToolReference()}
+
+RULES:
+- Break complex commands into sequential steps. Order matters.
+- "show me X from workspace Y" → [switchWorkspace(Y), focusNode(X)]
+- "open a terminal and organize" → [openNode(terminal), arrangeNodes(grid)]
+- "show all" / "show me everything" → [fitAll()]
+- "focus X" / "go to X" / "show me X" → [focusNode(id)] — match by title/type
+- Single commands still return an array: [{"tool":"fitAll","args":{}}]
+- If unsure, return [{"tool":"fitAll","args":{}}]
 
 STATE:
-workspace: ${workspacesResult.activeWorkspaceId}
+activeWorkspace: ${workspacesResult.activeWorkspaceId}
 workspaces: ${JSON.stringify(workspaces)}
 nodes: ${JSON.stringify(nodes)}
 camera: zoom=${cameraResult.zoom?.toFixed(2) ?? 1}`
@@ -78,44 +90,10 @@ camera: zoom=${cameraResult.zoom?.toFixed(2) ?? 1}`
   return text
 }
 
-// ---------------------------------------------------------------------------
-// Convert MCP tool defs to OpenAI format
-// ---------------------------------------------------------------------------
-
-// Only expose action tools — read tools are pre-loaded in the system prompt
-const READ_TOOLS = new Set(['listNodes', 'listWorkspaces', 'getCamera'])
-
-function toOpenAITools(): ChatCompletionTool[] {
-  return MCP_TOOLS
-    .filter((t) => !READ_TOOLS.has(t.name))
-    .map((t) => ({
-      type: 'function' as const,
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: t.input_schema,
-      },
-    }))
-}
+// parsePlan and summarizeAction imported from ./planner
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function summarizeParams(toolName: string, input: Record<string, unknown>): string {
-  switch (toolName) {
-    case 'openNode': return `${input.type}`
-    case 'focusNode': return `${input.id}`
-    case 'removeNode': return `${input.id}`
-    case 'switchWorkspace': return `${input.id}`
-    case 'arrangeNodes': return `${input.strategy}`
-    case 'setCamera': return `zoom ${input.zoom}`
-    default: return ''
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Run agent
+// Run agent — plan then execute
 // ---------------------------------------------------------------------------
 
 export async function runVoiceAgent(
@@ -125,7 +103,7 @@ export async function runVoiceAgent(
   model: string,
 ): Promise<string | null> {
   if (!apiKey) {
-    sendStatus({ state: 'error', message: 'No API key configured. Set it in Settings → Voice Commands.' })
+    sendStatus({ state: 'error', message: 'No API key. Set it in Settings → Voice Commands.' })
     return null
   }
 
@@ -134,52 +112,66 @@ export async function runVoiceAgent(
   sendStatus({ state: 'thinking' })
 
   try {
+    // Step 1: Plan — one LLM call to get all actions
     const systemPrompt = await buildSystemPrompt()
-    const tools = toOpenAITools()
 
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: transcript },
     ]
 
-    let textResponse: string | null = null
-
-    // Agentic loop — keep going until the model stops calling tools
-    // Single-shot: call the model once, execute all tools, done.
-    // No agentic loop — voice commands should be one action, not a conversation.
     const response = await client.chat.completions.create({
       model,
       max_tokens: 256,
-      tools,
-      tool_choice: 'required' as const,
       messages,
     })
 
-    const choice = response.choices[0]
-    if (choice?.message?.content) {
-      textResponse = choice.message.content
+    const rawPlan = response.choices[0]?.message?.content
+    if (!rawPlan) {
+      sendStatus({ state: 'error', message: 'No response from model' })
+      return null
     }
 
-    const toolCalls = choice?.message?.tool_calls
-    if (toolCalls && toolCalls.length > 0) {
-      for (const toolCall of toolCalls) {
-        const fnName = toolCall.function.name
-        let fnArgs: Record<string, unknown> = {}
-        try { fnArgs = JSON.parse(toolCall.function.arguments) } catch {}
+    console.log('[voice-agent] Plan:', rawPlan)
 
-        const paramSummary = summarizeParams(fnName, fnArgs)
-        sendStatus({ state: 'executing', message: `${fnName}${paramSummary ? ': ' + paramSummary : ''}` })
+    // Step 2: Parse the plan
+    let actions: PlannedAction[]
+    try {
+      actions = parsePlan(rawPlan)
+    } catch (err: any) {
+      console.error('[voice-agent] Failed to parse plan:', err.message)
+      sendStatus({ state: 'error', message: `Bad plan: ${err.message}` })
+      return null
+    }
 
-        try {
-          await executeTool(fnName, fnArgs)
-        } catch (err: any) {
-          console.error(`[voice-agent] Tool ${fnName} failed:`, err.message)
-        }
+    if (actions.length === 0) {
+      sendStatus({ state: 'done' })
+      return null
+    }
+
+    // Step 3: Execute actions sequentially
+    const summary = actions.map(summarizeAction).join(' → ')
+    sendStatus({ state: 'executing', message: summary })
+
+    for (let i = 0; i < actions.length; i++) {
+      const action = actions[i]
+      sendStatus({ state: 'executing', message: `[${i + 1}/${actions.length}] ${summarizeAction(action)}` })
+
+      try {
+        await executeTool(action.tool, action.args)
+      } catch (err: any) {
+        console.error(`[voice-agent] ${action.tool} failed:`, err.message)
+        // Continue with remaining actions — don't abort the pipeline
+      }
+
+      // Small delay between actions for visual feedback
+      if (i < actions.length - 1) {
+        await new Promise((r) => setTimeout(r, 150))
       }
     }
 
-    sendStatus({ state: 'done', message: textResponse ?? undefined })
-    return textResponse
+    sendStatus({ state: 'done', message: summary })
+    return summary
   } catch (err: any) {
     console.error('[voice-agent] Error:', err.message)
     sendStatus({ state: 'error', message: err.message })

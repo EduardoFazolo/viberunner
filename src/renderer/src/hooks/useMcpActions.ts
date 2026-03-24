@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { useNodeStore, type NodeType } from '../stores/nodeStore'
 import { useCameraStore, animateCameraTo } from '../stores/cameraStore'
 import { useWorkspaceStore, getActiveWorkspace } from '../stores/workspaceStore'
-import { fitAllNodes, computeFitCamera, getCanvasRect } from '../utils/canvasUtils'
+import { fitAllNodes, getCanvasRect } from '../utils/canvasUtils'
+import { zoomFitNode } from '../utils/zoomFocus'
 import { loadWorkspaceCanvas } from './useWorkspaceInit'
 
 // ---------------------------------------------------------------------------
@@ -133,11 +134,8 @@ function handleAction(action: string, params: Record<string, unknown>): unknown 
       store.bringToFront(id)
       store.setFocusedNodeId(id)
       store.trackFocus(id)
-      // Pan camera to center on the node
-      const { width: vw, height: vh } = getCanvasRect()
-      const targetX = vw / 2 - (node.x + node.width / 2) * cameraStore.camera.zoom
-      const targetY = vh / 2 - (node.y + node.height / 2) * cameraStore.camera.zoom
-      animateCameraTo({ x: targetX, y: targetY, zoom: cameraStore.camera.zoom }, 320)
+      // Zoom to fit the node — same as double-tap gesture
+      zoomFitNode(id)
       return { ok: true }
     }
 
