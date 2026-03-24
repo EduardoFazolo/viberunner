@@ -288,8 +288,11 @@ contextBridge.exposeInMainWorld('orchestrator', {
 })
 
 contextBridge.exposeInMainWorld('windowpicker', {
-  listWindows: (): Promise<Array<{ id: number; name: string; owner: string; pid: number; thumbnail: string | null }>> =>
+  listWindows: (): Promise<Array<{ id: number; name: string; owner: string; pid: number }>> =>
     ipcRenderer.invoke('windowpicker:listWindows'),
+
+  getThumbnails: (): Promise<Array<{ id: number; thumbnail: string }>> =>
+    ipcRenderer.invoke('windowpicker:getThumbnails'),
 
   captureWindow: (windowId: number): Promise<string | null> =>
     ipcRenderer.invoke('windowpicker:captureWindow', windowId),

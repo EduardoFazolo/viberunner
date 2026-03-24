@@ -7,7 +7,20 @@ interface DesktopWindow {
   name: string
   owner: string
   pid: number
-  thumbnail: string | null
+}
+
+const THUMB_PLACEHOLDER: React.CSSProperties = {
+  width: 80,
+  height: 60,
+  borderRadius: 4,
+  border: '1px solid rgba(255,255,255,0.08)',
+  flexShrink: 0,
+  background: 'rgba(255,255,255,0.04)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: 'rgba(255,255,255,0.15)',
+  fontSize: 18
 }
 
 export function WindowPickerNode({ node }: { node: NodeData }): React.ReactElement {
@@ -19,6 +32,7 @@ export function WindowPickerNode({ node }: { node: NodeData }): React.ReactEleme
 
   const [picking, setPicking] = useState(!windowId)
   const [windows, setWindows] = useState<DesktopWindow[]>([])
+  const [thumbnails, setThumbnails] = useState<Map<number, string>>(new Map())
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -38,13 +52,22 @@ export function WindowPickerNode({ node }: { node: NodeData }): React.ReactEleme
 
   const loadWindows = useCallback(async () => {
     setLoading(true)
+    setThumbnails(new Map())
     try {
-      const list: DesktopWindow[] = await window.windowpicker.listWindows()
-      // Filter out CanvaFlow's own window
+      // Fast: get metadata instantly
+      const list = await window.windowpicker.listWindows()
       setWindows(list.filter((w) => w.owner !== 'Electron' || !w.name.includes('CanvaFlow')))
+      setLoading(false)
+
+      // Slow: load thumbnails in background
+      const thumbs = await window.windowpicker.getThumbnails()
+      const map = new Map<number, string>()
+      for (const t of thumbs) {
+        map.set(t.id, t.thumbnail)
+      }
+      setThumbnails(map)
     } catch (err) {
       console.error('[WindowPicker] Failed to list windows:', err)
-    } finally {
       setLoading(false)
     }
   }, [])
@@ -63,8 +86,8 @@ export function WindowPickerNode({ node }: { node: NodeData }): React.ReactEleme
 
   const selectWindow = useCallback(
     async (win: DesktopWindow) => {
-      // Capture high-res screenshot
-      const capture = await window.windowpicker.captureWindow(win.id)
+      // Use existing thumbnail as immediate preview, then capture high-res
+      const existingThumb = thumbnails.get(win.id)
       update(node.id, {
         props: {
           ...node.props,
@@ -72,13 +95,28 @@ export function WindowPickerNode({ node }: { node: NodeData }): React.ReactEleme
           windowOwner: win.owner,
           windowName: win.name,
           windowPid: win.pid,
-          screenshot: capture || win.thumbnail
+          screenshot: existingThumb || null
         },
         title: win.owner ? `${win.owner} — ${win.name || 'Window'}` : win.name || 'Window'
       })
       setPicking(false)
+
+      // Capture high-res in background
+      const capture = await window.windowpicker.captureWindow(win.id)
+      if (capture) {
+        update(node.id, {
+          props: {
+            ...node.props,
+            windowId: win.id,
+            windowOwner: win.owner,
+            windowName: win.name,
+            windowPid: win.pid,
+            screenshot: capture
+          }
+        })
+      }
     },
-    [node.id, node.props, update]
+    [node.id, node.props, update, thumbnails]
   )
 
   const focusWindow = useCallback(async () => {
@@ -199,57 +237,81 @@ export function WindowPickerNode({ node }: { node: NodeData }): React.ReactEleme
                   >
                     {owner}
                   </div>
-                  {wins.map((w) => (
-                    <button
-                      key={w.id}
-                      onClick={() => selectWindow(w)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        width: '100%',
-                        padding: '6px 8px',
-                        background: 'transparent',
-                        border: 'none',
-                        borderRadius: 5,
-                        color: 'rgba(255,255,255,0.8)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        fontSize: 12,
-                        fontFamily: 'inherit',
-                        transition: 'background 0.1s'
-                      }}
-                      onMouseOver={(e) =>
-                        (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')
-                      }
-                      onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      {w.thumbnail && (
-                        <img
-                          src={w.thumbnail}
-                          alt=""
-                          style={{
-                            width: 80,
-                            height: 60,
-                            objectFit: 'cover',
-                            borderRadius: 4,
-                            border: '1px solid rgba(255,255,255,0.08)',
-                            flexShrink: 0
-                          }}
-                        />
-                      )}
-                      <span
+                  {wins.map((w) => {
+                    const thumb = thumbnails.get(w.id)
+                    return (
+                      <button
+                        key={w.id}
+                        onClick={() => selectWindow(w)}
                         style={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          width: '100%',
+                          padding: '6px 8px',
+                          background: 'transparent',
+                          border: 'none',
+                          borderRadius: 5,
+                          color: 'rgba(255,255,255,0.8)',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          fontSize: 12,
+                          fontFamily: 'inherit',
+                          transition: 'background 0.1s'
                         }}
+                        onMouseOver={(e) =>
+                          (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')
+                        }
+                        onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
                       >
-                        {w.name || 'Untitled Window'}
-                      </span>
-                    </button>
-                  ))}
+                        {thumb ? (
+                          <img
+                            src={thumb}
+                            alt=""
+                            style={{
+                              width: 80,
+                              height: 60,
+                              objectFit: 'cover',
+                              borderRadius: 4,
+                              border: '1px solid rgba(255,255,255,0.08)',
+                              flexShrink: 0
+                            }}
+                          />
+                        ) : (
+                          <div style={THUMB_PLACEHOLDER}>
+                            <svg
+                              width="20"
+                              height="16"
+                              viewBox="0 0 20 16"
+                              fill="none"
+                              style={{ opacity: 0.4 }}
+                            >
+                              <rect
+                                x="1"
+                                y="1"
+                                width="18"
+                                height="14"
+                                rx="2"
+                                stroke="currentColor"
+                                strokeWidth="1.2"
+                              />
+                              <path d="M1 4h18" stroke="currentColor" strokeWidth="1.2" />
+                            </svg>
+                          </div>
+                        )}
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1
+                          }}
+                        >
+                          {w.name || 'Untitled Window'}
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               ))}
           </div>

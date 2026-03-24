@@ -129,7 +129,8 @@ declare global {
     }
 
     windowpicker: {
-      listWindows: () => Promise<Array<{ id: number; name: string; owner: string; pid: number; thumbnail: string | null }>>
+      listWindows: () => Promise<Array<{ id: number; name: string; owner: string; pid: number }>>
+      getThumbnails: () => Promise<Array<{ id: number; thumbnail: string }>>
       captureWindow: (windowId: number) => Promise<string | null>
       focusWindow: (pid: number, owner: string) => Promise<void>
     }

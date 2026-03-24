@@ -10,7 +10,11 @@ export interface DesktopWindow {
   name: string
   owner: string
   pid: number
-  thumbnail: string | null
+}
+
+export interface WindowThumbnail {
+  id: number
+  thumbnail: string
 }
 
 // Swift script that uses CGWindowListCopyWindowInfo to get window ID → owner/PID mapping.
@@ -49,7 +53,6 @@ function ensureBinary(): string {
   const srcPath = join(cacheDir, 'windowinfo.swift')
   binaryPath = join(cacheDir, 'windowinfo')
 
-  // Recompile if source changed or binary missing
   writeFileSync(srcPath, SWIFT_WINDOW_INFO)
   try {
     execSync(`swiftc -O -o "${binaryPath}" "${srcPath}" 2>&1`, { timeout: 60000 })
@@ -86,51 +89,42 @@ export function registerWindowPickerHandlers(ipc: IpcMainLike): void {
   // Pre-compile Swift binary on startup (in background)
   setTimeout(() => ensureBinary(), 2000)
 
+  // Fast: returns metadata only (no thumbnails), instant response
   ipc.handle('windowpicker:listWindows', async (): Promise<DesktopWindow[]> => {
-    // Get window metadata from CoreGraphics (owner, PID) keyed by CGWindowID
     const infoMap = getWindowInfoMap()
 
-    // Get window thumbnails from Electron
+    const results: DesktopWindow[] = []
+    for (const [id, info] of infoMap) {
+      if (!info.name && !info.owner) continue
+      results.push({
+        id,
+        name: info.name || 'Untitled',
+        owner: info.owner,
+        pid: info.pid
+      })
+    }
+
+    return results
+  })
+
+  // Slow: returns thumbnails for all windows in one batch
+  ipc.handle('windowpicker:getThumbnails', async (): Promise<WindowThumbnail[]> => {
     const sources = await desktopCapturer.getSources({
       types: ['window'],
       thumbnailSize: { width: 320, height: 240 },
       fetchWindowIcons: true
     })
 
-    const results: DesktopWindow[] = []
-    const seenIds = new Set<number>()
-
-    // First pass: add windows from desktopCapturer (has thumbnails)
+    const results: WindowThumbnail[] = []
     for (const source of sources) {
       const cgWindowId = parseInt(source.id.split(':')[1])
       if (isNaN(cgWindowId)) continue
-      seenIds.add(cgWindowId)
-
-      const info = infoMap.get(cgWindowId)
-      const thumbnail = source.thumbnail.isEmpty() ? null : source.thumbnail.toDataURL()
-
+      if (source.thumbnail.isEmpty()) continue
       results.push({
         id: cgWindowId,
-        name: info?.name || source.name || 'Untitled',
-        owner: info?.owner || '',
-        pid: info?.pid || 0,
-        thumbnail
+        thumbnail: source.thumbnail.toDataURL()
       })
     }
-
-    // Second pass: add windows from CoreGraphics that desktopCapturer missed (no thumbnail)
-    for (const [id, info] of infoMap) {
-      if (seenIds.has(id)) continue
-      if (!info.name && !info.owner) continue
-      results.push({
-        id,
-        name: info.name || 'Untitled',
-        owner: info.owner,
-        pid: info.pid,
-        thumbnail: null
-      })
-    }
-
     return results
   })
 
