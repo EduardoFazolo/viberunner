@@ -9,6 +9,9 @@
  *     hold past threshold → canvas drag (pan), release = stop drag
  *   Double pinch (800ms)  → right click
  *
+ * Peace sign (V gesture)  → speech-to-text (Cmd+Shift+V)
+ *   Index + middle finger extended, rest curled
+ *
  * Buffer: once in pinch/drag mode, only exit when hand is fully open
  * (a closed fist does NOT break out — must open hand).
  */
@@ -16,6 +19,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { GestureRecognizer, GestureRecognizerResult } from '@mediapipe/tasks-vision'
 import { useCameraStore } from '../../../renderer/src/stores/cameraStore'
+import { useVoiceStore } from '../../../renderer/src/stores/voiceStore'
 import { useMaestroStore } from '../maestroStore'
 
 // ─── Preload bridge type ─────────────────────────────────────────────────────
@@ -64,6 +68,8 @@ const PINCH_THRESHOLD = 0.28
 const PINCH_THRESHOLD_DRAG = 0.50
 /** Zoom sensitivity: multiplier for vertical hand movement → zoom delta. */
 const ZOOM_SENSITIVITY = 3.0
+/** Cooldown between speech-to-text gesture triggers. */
+const SPEECH_COOLDOWN_MS = 2000
 
 const PALM_LM = [0, 5, 9, 13, 17]
 
@@ -174,6 +180,27 @@ function isOpenPalm(lms: HandLandmark[]): boolean {
   return true
 }
 
+/** Peace sign = index (lm8) and middle (lm12) fully erect, ring (lm16) and pinky (lm20) curled,
+ *  thumb (lm4) curled or neutral. Used for speech-to-text gesture.
+ *  Strict: fingertips must be well above their MCP joints (pointing up). */
+function isPeaceSign(lms: HandLandmark[]): boolean {
+  const ps = palmSize(lms)
+  if (ps < 0.01) return false
+  // Index and middle fingertips must be far from wrist (fully extended)
+  if (dist2D(lms[8], lms[0]) < ps * 1.7) return false
+  if (dist2D(lms[12], lms[0]) < ps * 1.7) return false
+  // Fingertips must be above their MCP joints (y decreases upward in normalized coords)
+  // Index tip (8) above index MCP (5), middle tip (12) above middle MCP (9)
+  if (lms[8].y >= lms[5].y) return false
+  if (lms[12].y >= lms[9].y) return false
+  // Ring and pinky must be curled (close to wrist)
+  if (dist2D(lms[16], lms[0]) > ps * 1.2) return false
+  if (dist2D(lms[20], lms[0]) > ps * 1.2) return false
+  // Thumb should not be extended outward (curled or neutral)
+  if (dist2D(lms[4], lms[5]) > ps * 0.7) return false
+  return true
+}
+
 /** Simple binary: pinching or not. */
 type HandPose = 'open' | 'pinch'
 function classifyPose(lms: HandLandmark[]): HandPose {
@@ -238,6 +265,8 @@ export function useMaestro(): MaestroState {
   // ── Drag confidence (prevents noisy mid-drag drops) ───────────────────
   const dragConfidenceRef     = useRef(1)
   const softStopSinceRef     = useRef(0)
+  // ── Speech-to-text gesture (peace sign → Cmd+Shift+V) ────────────────
+  const lastSpeechTriggerRef = useRef(0)
 
   // ── Hand pose confirmation (debounce noise) ───────────────────────────
   const confirmedPoseRef   = useRef<HandPose>('open')
@@ -419,6 +448,27 @@ export function useMaestro(): MaestroState {
 
     // Not zooming — clear zoom state
     prevZoomYRef.current = null
+
+    // ── Peace sign (V gesture) → toggle voice dictation ──
+    const speechHand = rightHand ?? leftHand
+    if (speechHand && isPeaceSign(speechHand.landmarks)) {
+      const now = Date.now()
+      if (now - lastSpeechTriggerRef.current > SPEECH_COOLDOWN_MS) {
+        lastSpeechTriggerRef.current = now
+        const voice = useVoiceStore.getState()
+        const wasRecording = voice.recording
+        if (wasRecording) {
+          voice.stopRecording()
+        } else {
+          voice.startRecording('dictate')
+        }
+        window.voice?.toggle().catch(() => {
+          if (wasRecording) voice.startRecording('dictate')
+          else voice.stopRecording()
+        })
+      }
+      return
+    }
 
     // ── Pick the controlling hand (single-hand mode) ──
     // Prefer 'Right' but fall back to whatever hand is visible.

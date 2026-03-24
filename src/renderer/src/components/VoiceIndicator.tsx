@@ -1,5 +1,20 @@
 import React, { useEffect } from 'react'
 import { useVoiceStore } from '../stores/voiceStore'
+import { useNodeStore } from '../stores/nodeStore'
+import { pasteIntoBrowser } from '../browserRegistry'
+
+/** Insert text into the currently focused input/textarea/contenteditable in the main renderer. */
+function insertIntoActiveElement(text: string): void {
+  const el = document.activeElement
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const start = el.selectionStart ?? el.value.length
+    const end = el.selectionEnd ?? el.value.length
+    el.setRangeText(text, start, end, 'end')
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  } else if (el?.getAttribute('contenteditable')) {
+    document.execCommand('insertText', false, text)
+  }
+}
 
 /**
  * Floating voice indicator — shows recording state, transcript overlay, and agent status.
@@ -23,14 +38,14 @@ export function VoiceIndicator(): React.ReactElement | null {
       useVoiceStore.getState().setTranscript(text)
 
       if (currentMode === 'dictate') {
-        const el = document.activeElement
-        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-          const start = el.selectionStart ?? el.value.length
-          const end = el.selectionEnd ?? el.value.length
-          el.setRangeText(text, start, end, 'end')
-          el.dispatchEvent(new Event('input', { bubbles: true }))
-        } else if (el?.getAttribute('contenteditable')) {
-          document.execCommand('insertText', false, text)
+        // Try pasting into focused browser node first (WebContentsView/webview)
+        const focusedId = useNodeStore.getState().focusedNodeId
+        if (focusedId) {
+          pasteIntoBrowser(focusedId, text).then((handled) => {
+            if (!handled) insertIntoActiveElement(text)
+          })
+        } else {
+          insertIntoActiveElement(text)
         }
       } else {
         // Command mode — send to voice agent

@@ -32,4 +32,5 @@ export function registerMaestroHandlers(ipc: IpcMainLike): void {
   ipc.handle('maestro:key-toggle', (_e: unknown, key: string, down: boolean) => {
     getRobot().keyToggle(key, down ? 'down' : 'up')
   })
+
 }

@@ -8,7 +8,7 @@ import { useActivationStore } from '../../../renderer/src/stores/activationStore
 import { NodePlaceholder } from '../../../renderer/src/components/NodePlaceholder'
 import { useCanvasDrag } from '../../../renderer/src/hooks/useCanvasDrag'
 import { getPreparedTrelloExport, primeTrelloExport } from '../utils/trelloDrag'
-import { pasteIntoBrowser } from '../../../renderer/src/browserRegistry'
+import { pasteIntoBrowser, registerBrowserPaster, unregisterBrowserPaster } from '../../../renderer/src/browserRegistry'
 import { zoomFitNode, zoomExit } from '../../../renderer/src/utils/zoomFocus'
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -373,6 +373,55 @@ export function TrelloNode({ node }: Props): React.ReactElement {
       if (t) setToken(t)
     })
   }, [])
+
+  // Register browser paster so voice dictation can inject text into the Trello webview
+  useEffect(() => {
+    registerBrowserPaster(node.id, async (text: string) => {
+      useNodeStore.getState().setFocusedNodeId(node.id)
+      try { ;(webviewRef.current as any)?.focus() } catch {}
+
+      const js = `
+        (() => {
+          const text = ${JSON.stringify(text)}
+          const active = document.activeElement
+
+          const isTextInput = (el) =>
+            el instanceof HTMLTextAreaElement ||
+            (el instanceof HTMLInputElement && (!el.type || ['text', 'search', 'url', 'email', 'tel', 'password'].includes(el.type)))
+
+          const insert = (el) => {
+            if (!el) return false
+            if (isTextInput(el)) {
+              const start = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length
+              const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : el.value.length
+              el.focus()
+              el.setRangeText(text, start, end, 'end')
+              el.dispatchEvent(new Event('input', { bubbles: true }))
+              el.dispatchEvent(new Event('change', { bubbles: true }))
+              return true
+            }
+            if (el instanceof HTMLElement && el.isContentEditable) {
+              el.focus()
+              try { if (document.execCommand('insertText', false, text)) return true } catch {}
+              return false
+            }
+            return false
+          }
+
+          if (insert(active)) return true
+          const fallback = document.querySelector('textarea, input:not([type]), input[type="text"], input[type="search"], [contenteditable="true"], [contenteditable=""], [role="textbox"]')
+          return insert(fallback)
+        })()
+      `
+
+      try {
+        return Boolean(await (webviewRef.current as any)?.executeJavaScript(js))
+      } catch {
+        return false
+      }
+    })
+    return () => unregisterBrowserPaster(node.id)
+  }, [node.id])
 
   const handleSaveCredentials = useCallback((k: string, t: string) => {
     setApiKey(k)
