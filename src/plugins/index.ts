@@ -1,5 +1,4 @@
 import type React from 'react'
-import { maestroPlugin } from './maestro'
 import { OrchestratorMount } from './orchestrator'
 
 export interface Plugin {
@@ -9,6 +8,5 @@ export interface Plugin {
 }
 
 export const plugins: Plugin[] = [
-  maestroPlugin,
   { id: 'orchestrator', CanvasMount: OrchestratorMount },
 ]
