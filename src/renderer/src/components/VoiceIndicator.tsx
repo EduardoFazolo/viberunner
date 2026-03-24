@@ -3,23 +3,44 @@ import { useVoiceStore } from '../stores/voiceStore'
 
 /**
  * Floating voice indicator — shows recording state and transcript overlay.
- * Rendered as a fixed-position overlay on the canvas.
+ * Handles two modes:
+ *   - dictate (Cmd+Shift+V): inserts transcript into the focused input/textarea
+ *   - command (Cmd+Shift+M): will be sent to the voice agent (Phase 4)
  */
 export function VoiceIndicator(): React.ReactElement | null {
   const recording = useVoiceStore((s) => s.recording)
+  const mode = useVoiceStore((s) => s.mode)
   const transcript = useVoiceStore((s) => s.transcript)
   const transcriptVisible = useVoiceStore((s) => s.transcriptVisible)
 
   // Subscribe to transcripts from the main process
   useEffect(() => {
     const unsub = window.voice?.onTranscript((text) => {
+      const { mode: currentMode } = useVoiceStore.getState()
       useVoiceStore.getState().stopRecording()
       useVoiceStore.getState().setTranscript(text)
+
+      if (currentMode === 'dictate') {
+        // Insert text into the currently focused input/textarea
+        const el = document.activeElement
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          const start = el.selectionStart ?? el.value.length
+          const end = el.selectionEnd ?? el.value.length
+          el.setRangeText(text, start, end, 'end')
+          el.dispatchEvent(new Event('input', { bubbles: true }))
+        } else if (el?.getAttribute('contenteditable')) {
+          document.execCommand('insertText', false, text)
+        }
+      }
+      // 'command' mode: transcript will be picked up by the voice agent (Phase 4)
     })
     return unsub
   }, [])
 
   if (!recording && !transcriptVisible) return null
+
+  const modeLabel = mode === 'dictate' ? 'Dictating…' : 'Listening…'
+  const dotColor = mode === 'dictate' ? '#f59e0b' : '#ef4444'
 
   return (
     <>
@@ -45,8 +66,8 @@ export function VoiceIndicator(): React.ReactElement | null {
             width: 10,
             height: 10,
             borderRadius: '50%',
-            background: '#ef4444',
-            boxShadow: '0 0 8px #ef4444',
+            background: dotColor,
+            boxShadow: `0 0 8px ${dotColor}`,
             animation: 'voice-pulse 1.2s ease-in-out infinite',
           }} />
           <span style={{
@@ -55,7 +76,7 @@ export function VoiceIndicator(): React.ReactElement | null {
             fontWeight: 500,
             letterSpacing: '0.02em',
           }}>
-            Listening…
+            {modeLabel}
           </span>
         </div>
       )}

@@ -93,8 +93,6 @@ export function SettingsView(): React.ReactElement {
           </>
         )}
 
-        <VoiceSection />
-
         <McpSection />
 
         <div style={{ marginTop: 32, fontSize: 11, color: 'rgba(255,255,255,0.15)' }}>
@@ -105,81 +103,78 @@ export function SettingsView(): React.ReactElement {
   )
 }
 
-function VoiceSection(): React.ReactElement {
-  const [installed, setInstalled] = useState<boolean | null>(null)
-  const [installing, setInstalling] = useState(false)
+function McpSection(): React.ReactElement {
+  // Lovable MCP state
+  const [lovableInstalled, setLovableInstalled] = useState<boolean | null>(null)
+  const [lovableInstalling, setLovableInstalling] = useState(false)
+
+  const checkLovable = useCallback(async () => {
+    const result = await window.lovable.checkMcpGlobal()
+    setLovableInstalled(result)
+  }, [])
+
+  useEffect(() => { checkLovable() }, [checkLovable])
+
+  const installLovable = async () => {
+    setLovableInstalling(true)
+    try {
+      await window.lovable.installMcpGlobal()
+      await checkLovable()
+    } finally {
+      setLovableInstalling(false)
+    }
+  }
+
+  // Voice MCP state
+  const [handyInstalled, setHandyInstalled] = useState<boolean | null>(null)
+  const [handyInstalling, setHandyInstalling] = useState(false)
   const [bridgePath, setBridgePath] = useState<string | null>(null)
 
-  const check = useCallback(async () => {
+  const checkHandy = useCallback(async () => {
     const result = await window.voice.checkHandy()
-    setInstalled(result)
+    setHandyInstalled(result)
     if (result) {
       const { bridgeScriptPath } = await window.voice.setup()
       setBridgePath(bridgeScriptPath)
     }
   }, [])
 
-  useEffect(() => { check() }, [check])
+  useEffect(() => { checkHandy() }, [checkHandy])
 
-  const install = async () => {
-    setInstalling(true)
+  const installHandy = async () => {
+    setHandyInstalling(true)
     try {
       await window.voice.installHandy()
-      await check()
+      await checkHandy()
     } finally {
-      setInstalling(false)
+      setHandyInstalling(false)
     }
   }
 
   return (
-    <Section label="Voice Commands">
-      <div style={{
-        padding: '12px 16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <span style={{ fontSize: 16 }}>🎙</span>
-          <div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
-              Handy (Speech-to-Text)
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
-              Offline voice commands via Whisper. Toggle with Cmd+Shift+V.
-            </div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          {installed === null ? (
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>checking…</span>
-          ) : installed ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: '#4ade80',
-                boxShadow: '0 0 6px #4ade80',
-              }} />
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Installed</span>
-            </div>
-          ) : (
-            <button
-              onClick={install}
-              disabled={installing}
-              style={{
-                height: 28, padding: '0 14px', borderRadius: 6, fontSize: 11,
-                border: '1px solid rgba(167,139,250,0.4)',
-                background: 'rgba(167,139,250,0.1)',
-                color: installing ? 'rgba(255,255,255,0.3)' : '#a78bfa',
-                cursor: installing ? 'default' : 'pointer',
-                fontFamily: 'inherit', fontWeight: 500,
-                transition: 'all 0.1s',
-              }}
-            >
-              {installing ? 'Installing…' : 'Install via Homebrew'}
-            </button>
-          )}
-        </div>
-      </div>
-      {installed && bridgePath && (
+    <Section label="MCPs">
+      {/* Lovable MCP */}
+      <McpRow
+        icon="🔥"
+        name="Lovable MCP"
+        description="Lets Claude send prompts to Lovable"
+        installed={lovableInstalled}
+        installing={lovableInstalling}
+        onInstall={installLovable}
+        accentColor="#fb923c"
+      />
+
+      {/* Voice Commands MCP */}
+      <McpRow
+        icon="🎙"
+        name="Voice Commands"
+        description="Dictate (⌘⇧V) or command (⌘⇧M) via Handy + Whisper"
+        installed={handyInstalled}
+        installing={handyInstalling}
+        onInstall={installHandy}
+        accentColor="#a78bfa"
+      />
+      {handyInstalled && bridgePath && (
         <div style={{
           padding: '8px 16px 12px',
           borderTop: '1px solid rgba(255,255,255,0.05)',
@@ -205,76 +200,59 @@ function VoiceSection(): React.ReactElement {
   )
 }
 
-function McpSection(): React.ReactElement {
-  const [installed, setInstalled] = useState<boolean | null>(null)
-  const [installing, setInstalling] = useState(false)
-
-  const check = useCallback(async () => {
-    const result = await window.lovable.checkMcpGlobal()
-    setInstalled(result)
-  }, [])
-
-  useEffect(() => { check() }, [check])
-
-  const install = async () => {
-    setInstalling(true)
-    try {
-      await window.lovable.installMcpGlobal()
-      await check()
-    } finally {
-      setInstalling(false)
-    }
-  }
-
+function McpRow({ icon, name, description, installed, installing, onInstall, accentColor }: {
+  icon: string; name: string; description: string
+  installed: boolean | null; installing: boolean
+  onInstall: () => void; accentColor: string
+}): React.ReactElement {
   return (
-    <Section label="MCPs">
-      <div style={{
-        padding: '12px 16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-          <span style={{ fontSize: 16 }}>🔥</span>
-          <div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
-              Lovable MCP
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
-              Lets Claude send prompts to Lovable
-            </div>
+    <div style={{
+      padding: '12px 16px',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      borderBottom: '1px solid rgba(255,255,255,0.05)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <div>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>
+            {name}
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
+            {description}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          {installed === null ? (
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>checking…</span>
-          ) : installed ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: '#4ade80',
-                boxShadow: '0 0 6px #4ade80',
-              }} />
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Installed</span>
-            </div>
-          ) : (
-            <button
-              onClick={install}
-              disabled={installing}
-              style={{
-                height: 28, padding: '0 14px', borderRadius: 6, fontSize: 11,
-                border: '1px solid rgba(251,146,60,0.4)',
-                background: 'rgba(251,146,60,0.1)',
-                color: installing ? 'rgba(255,255,255,0.3)' : '#fb923c',
-                cursor: installing ? 'default' : 'pointer',
-                fontFamily: 'inherit', fontWeight: 500,
-                transition: 'all 0.1s',
-              }}
-            >
-              {installing ? 'Installing…' : 'Install globally'}
-            </button>
-          )}
-        </div>
       </div>
-    </Section>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        {installed === null ? (
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>checking…</span>
+        ) : installed ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: '#4ade80',
+              boxShadow: '0 0 6px #4ade80',
+            }} />
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Installed</span>
+          </div>
+        ) : (
+          <button
+            onClick={onInstall}
+            disabled={installing}
+            style={{
+              height: 28, padding: '0 14px', borderRadius: 6, fontSize: 11,
+              border: `1px solid ${accentColor}66`,
+              background: `${accentColor}1a`,
+              color: installing ? 'rgba(255,255,255,0.3)' : accentColor,
+              cursor: installing ? 'default' : 'pointer',
+              fontFamily: 'inherit', fontWeight: 500,
+              transition: 'all 0.1s',
+            }}
+          >
+            {installing ? 'Installing…' : 'Install'}
+          </button>
+        )}
+      </div>
+    </div>
   )
 }
 

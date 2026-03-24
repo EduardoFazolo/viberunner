@@ -16,6 +16,7 @@ import { registerLovableHandlers } from '../plugins/lovable/main/handlers'
 import { registerOrchestratorHandlers } from '../plugins/orchestrator/main/handlers'
 import { registerMaestroHandlers } from '../plugins/maestro/main/handlers'
 import { registerVoiceHandlers } from './voice'
+import { registerMcpHandlers } from './mcp'
 
 // Suppress noisy Chromium GPU/Skia internal errors that are benign in webview usage
 app.commandLine.appendSwitch('log-level', '3')
@@ -133,7 +134,8 @@ function buildAppMenu(): void {
         { type: 'separator' },
         { label: 'Search', accelerator: 'CmdOrCtrl+K', click: send('search') },
         { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: send('settings') },
-        { label: 'Voice Toggle', accelerator: 'CmdOrCtrl+Shift+V', click: send('voiceToggle') },
+        { label: 'Voice Dictate', accelerator: 'CmdOrCtrl+Shift+V', click: send('voiceDictate') },
+        { label: 'Voice Command', accelerator: 'CmdOrCtrl+Shift+M', click: send('voiceCommand') },
       ],
     },
     {
@@ -161,6 +163,7 @@ app.whenReady().then(async () => {
   registerOrchestratorHandlers(ipcMain, () => mainWindow?.webContents ?? null)
   registerMaestroHandlers(ipcMain)
   registerVoiceHandlers(() => mainWindow?.webContents ?? null)
+  registerMcpHandlers(() => mainWindow?.webContents ?? null)
 
   // Init tmux and clean up orphan sessions from deleted nodes
   await tmuxManager.init()

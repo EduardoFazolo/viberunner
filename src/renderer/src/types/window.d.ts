@@ -63,6 +63,13 @@ interface BrowserCaptureAndHideResult {
 
 declare global {
   interface Window {
+    mcp: {
+      getTools: () => Promise<unknown[]>
+      execute: (name: string, input: Record<string, unknown>) => Promise<{ ok: boolean; result?: unknown; error?: string }>
+      onAction: (cb: (msg: { id: number; action: string; params: Record<string, unknown> }) => void) => () => void
+      respond: (id: number, result: unknown) => void
+    }
+
     terminal: {
       create: (id: string, workspaceId: string, cwd: string, shell: string) => Promise<void>
       write: (id: string, data: string) => void

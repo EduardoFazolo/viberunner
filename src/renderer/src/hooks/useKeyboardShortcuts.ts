@@ -93,17 +93,18 @@ export function useKeyboardShortcuts({ onSearch, onSettings }: Options): void {
         case 'settings':
           onSettings()
           break
-        case 'voiceToggle': {
+        case 'voiceDictate':
+        case 'voiceCommand': {
           const voice = useVoiceStore.getState()
           const wasRecording = voice.recording
+          const mode = name === 'voiceDictate' ? 'dictate' : 'command'
           if (wasRecording) {
             voice.stopRecording()
           } else {
-            voice.startRecording()
+            voice.startRecording(mode)
           }
           window.voice?.toggle().catch(() => {
-            // If toggle fails, revert state
-            if (wasRecording) voice.startRecording()
+            if (wasRecording) voice.startRecording(mode)
             else voice.stopRecording()
           })
           break

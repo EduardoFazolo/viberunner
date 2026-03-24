@@ -271,6 +271,26 @@ contextBridge.exposeInMainWorld('lovable', {
     ipcRenderer.invoke('lovable:install-mcp-global'),
 })
 
+contextBridge.exposeInMainWorld('mcp', {
+  getTools: (): Promise<unknown[]> =>
+    ipcRenderer.invoke('mcp:getTools'),
+
+  execute: (name: string, input: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error?: string }> =>
+    ipcRenderer.invoke('mcp:execute', name, input),
+
+  // Listen for write actions dispatched from main → renderer
+  onAction: (cb: (msg: { id: number; action: string; params: Record<string, unknown> }) => void): (() => void) => {
+    const listener = (_: unknown, msg: { id: number; action: string; params: Record<string, unknown> }) => cb(msg)
+    ipcRenderer.on('mcp:action', listener)
+    return () => ipcRenderer.removeListener('mcp:action', listener)
+  },
+
+  // Respond to a write action
+  respond: (id: number, result: unknown): void => {
+    ipcRenderer.invoke(`mcp:result:${id}`, result)
+  },
+})
+
 contextBridge.exposeInMainWorld('voice', {
   checkHandy: (): Promise<boolean> =>
     ipcRenderer.invoke('voice:checkHandy'),
