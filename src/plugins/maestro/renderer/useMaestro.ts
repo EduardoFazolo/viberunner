@@ -68,8 +68,7 @@ const PINCH_THRESHOLD = 0.28
 const PINCH_THRESHOLD_DRAG = 0.50
 /** Zoom sensitivity: multiplier for vertical hand movement → zoom delta. */
 const ZOOM_SENSITIVITY = 3.0
-/** Cooldown between speech-to-text gesture triggers. */
-const SPEECH_COOLDOWN_MS = 2000
+
 
 const PALM_LM = [0, 5, 9, 13, 17]
 
@@ -136,18 +135,25 @@ function palmSize(lms: HandLandmark[]): number {
 }
 
 /** Pinch = thumb tip (lm4) touching index tip (lm8), normalized by palm size.
- *  Uses 3D distance so tilted hands are detected more reliably. */
+ *  Uses 3D distance so tilted hands are detected more reliably.
+ *  Rejects closed fists — if all fingers are curled, it's a fist, not a pinch. */
 function isPinching(lms: HandLandmark[]): boolean {
   const ps = palmSize(lms)
   if (ps < 0.01) return false
-  return dist3D(lms[4], lms[8]) < ps * PINCH_THRESHOLD
+  if (dist3D(lms[4], lms[8]) >= ps * PINCH_THRESHOLD) return false
+  // Reject if it's actually a fist (middle, ring, pinky all curled in)
+  if (isFist(lms)) return false
+  return true
 }
 
-/** Wider pinch check used during drag — tolerates more finger separation during fast movement. */
+/** Wider pinch check used during drag — tolerates more finger separation during fast movement.
+ *  Also rejects closed fists. */
 function isPinchingDrag(lms: HandLandmark[]): boolean {
   const ps = palmSize(lms)
   if (ps < 0.01) return false
-  return dist3D(lms[4], lms[8]) < ps * PINCH_THRESHOLD_DRAG
+  if (dist3D(lms[4], lms[8]) >= ps * PINCH_THRESHOLD_DRAG) return false
+  if (isFist(lms)) return false
+  return true
 }
 
 /** Midpoint between thumb tip and index tip in normalized coordinates. */
@@ -265,8 +271,10 @@ export function useMaestro(): MaestroState {
   // ── Drag confidence (prevents noisy mid-drag drops) ───────────────────
   const dragConfidenceRef     = useRef(1)
   const softStopSinceRef     = useRef(0)
-  // ── Speech-to-text gesture (peace sign → Cmd+Shift+V) ────────────────
-  const lastSpeechTriggerRef = useRef(0)
+  // ── Speech-to-text gesture (peace sign toggle: V to start, V again to stop) ─
+  const speechActiveRef      = useRef(false)
+  /** True while the peace sign is being held — prevents re-triggering until released. */
+  const peaceHeldRef         = useRef(false)
 
   // ── Hand pose confirmation (debounce noise) ───────────────────────────
   const confirmedPoseRef   = useRef<HandPose>('open')
@@ -450,25 +458,35 @@ export function useMaestro(): MaestroState {
     prevZoomYRef.current = null
 
     // ── Peace sign (V gesture) → toggle voice dictation ──
+    // First V starts recording, second V stops. Other gestures in between are ignored.
     const speechHand = rightHand ?? leftHand
-    if (speechHand && isPeaceSign(speechHand.landmarks)) {
-      const now = Date.now()
-      if (now - lastSpeechTriggerRef.current > SPEECH_COOLDOWN_MS) {
-        lastSpeechTriggerRef.current = now
-        const voice = useVoiceStore.getState()
-        const wasRecording = voice.recording
-        if (wasRecording) {
-          voice.stopRecording()
-        } else {
-          voice.startRecording('dictate')
-        }
+    const peaceDetected = !!(speechHand && isPeaceSign(speechHand.landmarks))
+
+    if (peaceDetected && !peaceHeldRef.current) {
+      // Peace sign just appeared (edge trigger) → toggle
+      peaceHeldRef.current = true
+      if (!speechActiveRef.current) {
+        speechActiveRef.current = true
+        useVoiceStore.getState().startRecording('dictate')
         window.voice?.toggle().catch(() => {
-          if (wasRecording) voice.startRecording('dictate')
-          else voice.stopRecording()
+          useVoiceStore.getState().stopRecording()
+          speechActiveRef.current = false
+        })
+      } else {
+        speechActiveRef.current = false
+        useVoiceStore.getState().stopRecording()
+        window.voice?.toggle().catch(() => {
+          useVoiceStore.getState().startRecording('dictate')
+          speechActiveRef.current = true
         })
       }
-      return
+    } else if (!peaceDetected) {
+      // Hand changed pose — just release the edge trigger lock
+      peaceHeldRef.current = false
     }
+
+    // While recording, skip mouse processing so other gestures don't interfere
+    if (speechActiveRef.current) return
 
     // ── Pick the controlling hand (single-hand mode) ──
     // Prefer 'Right' but fall back to whatever hand is visible.
@@ -694,6 +712,12 @@ export function useMaestro(): MaestroState {
   function resetMouseState(): void {
     if (mousePhaseRef.current === 'dragging') void window.maestro?.mouseToggle(false, 'left')
     if (cmdActiveRef.current) { void window.maestro?.keyToggle('command', false); cmdActiveRef.current = false }
+    if (speechActiveRef.current) {
+      speechActiveRef.current = false
+      peaceHeldRef.current = false
+      useVoiceStore.getState().stopRecording()
+      void window.voice?.toggle()
+    }
     mousePhaseRef.current = 'idle'
     targetNormRef.current = null
     currentNormRef.current = null
